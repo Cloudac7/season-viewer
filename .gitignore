@@ -1,0 +1,13 @@
+node_modules
+dist
+.DS_Store
+*.local
+*.tsbuildinfo
+*.log
+.env
+.env.*
+!.env.example
+
+data-sources/
+artifacts/
+public/data/*.tmp.json
