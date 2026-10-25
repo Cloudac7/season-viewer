@@ -4,8 +4,10 @@ import type { FeatureCollection, Feature, Geometry } from 'geojson';
 import { LocateFixed, Minus, Plus, RotateCcw } from 'lucide-react';
 import type { Season, SeasonState } from '../types';
 import { SEASONS } from '../data';
+import type { ForecastTransition } from '../lib/forecast';
+import { transitionAppearance } from '../lib/map-status';
 
-interface Props { states: SeasonState[]; selected: string; onSelect: (id: string) => void; filter: Season | 'all'; showTransitions: boolean; layer: 'season' | 'temperature' }
+interface Props { states: SeasonState[]; forecastByCity: Record<string, ForecastTransition>; selected: string; onSelect: (id: string) => void; filter: Season | 'all'; showTransitions: boolean; layer: 'season' | 'temperature' }
 type Province = Feature<Geometry, { name: string; adcode: number | string; centroid?: [number, number]; center?: [number, number] }>;
 const labels: Record<string, [number, number, string]> = {
   '110000':[116.4,40.5,'北京'], '120000':[118.3,39,'天津'], '130000':[115,38.1,'河北'],
@@ -25,7 +27,7 @@ function temperatureColor(temp: number) {
   if (temp < 15) return '#c7d6c4'; if (temp < 20) return '#dbcfa6';
   if (temp < 25) return '#e3b981'; return '#d99a78';
 }
-export default function ChinaMap({ states, selected, onSelect, filter, showTransitions, layer }: Props) {
+export default function ChinaMap({ states, forecastByCity, selected, onSelect, filter, showTransitions, layer }: Props) {
   const [geo, setGeo] = useState<FeatureCollection | null>(null);
   const [mapError, setMapError] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -48,13 +50,14 @@ export default function ChinaMap({ states, selected, onSelect, filter, showTrans
     states.forEach(s => map.set(s.city.code, [...(map.get(s.city.code) ?? []), s]));
     return map;
   }, [states]);
+  const hoverAppearance = hover ? transitionAppearance(hover.state, forecastByCity[hover.state.city.id]) : null;
   if (mapError) return <div className="map-loading">地图载入失败，请刷新页面重试。</div>;
   if (!geo) return <div className="map-loading"><span className="loading-dot"/>正在展开中国地图…</div>;
   return <div className="map-canvas" onMouseLeave={() => setHover(null)}>
     <div className="map-watermark">CHINA<br/><span>SEASON ATLAS</span></div>
     <div className="map-scale"><span>全国视图</span><i/>代表城市滑标估算</div>
-    <svg className="china-map" viewBox="0 0 840 550" role="img" aria-label="全国季节分布交互地图，省域颜色由代表城市多数季节确定">
-      <defs><pattern id="transition-stripes" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(35)"><rect width="2" height="7" fill="#ffffff" opacity=".55"/></pattern><filter id="map-shadow"><feDropShadow dx="0" dy="5" stdDeviation="7" floodColor="#516456" floodOpacity=".07"/></filter><clipPath id="sea-clip"><rect x="2" y="2" width="75" height="80"/></clipPath></defs>
+    <svg className="china-map" viewBox="0 0 840 550" role="img" aria-label="全国季节分布交互地图，省域季节由代表城市多数季节确定，换季颜色提示来自已覆盖城市，不表示全省一致；预报预计完成尚未实况确认">
+      <defs><filter id="map-shadow"><feDropShadow dx="0" dy="5" stdDeviation="7" floodColor="#516456" floodOpacity=".07"/></filter><clipPath id="sea-clip"><rect x="2" y="2" width="75" height="80"/></clipPath></defs>
       <g transform={`translate(420 260) scale(${zoom}) translate(-420 -260)`}>
         <path d={path(geoGraticule10()) ?? ''} className="graticule"/>
         <g filter="url(#map-shadow)">
@@ -65,14 +68,19 @@ export default function ChinaMap({ states, selected, onSelect, filter, showTrans
             const valid = group.filter(s => s.average !== null);
             const average = valid.length ? valid.reduce((sum,s) => sum + s.average!, 0) / valid.length : null;
             const muted = filter !== 'all' && !group.some(s => s.season === filter);
-            const fill = main && average !== null ? layer === 'temperature' ? temperatureColor(average) : SEASONS[main.season].fill : '#e1e6e3';
+            const forecastCity = valid.find(s => forecastByCity[s.city.id]);
+            const pendingCity = valid.find(s => s.transition);
+            const signalCity = forecastCity ?? pendingCity;
+            const appearance = showTransitions && signalCity ? transitionAppearance(signalCity, forecastByCity[signalCity.city.id]) : null;
+            const transition = appearance?.status ?? 'none';
+            const fill = main && average !== null ? appearance?.fill ?? (layer === 'temperature' ? temperatureColor(average) : SEASONS[main.season].fill) : '#e1e6e3';
             const state = group.find(s => s.city.id === selected) ?? main;
+            const hoverState = transition === 'forecast' ? forecastCity : transition === 'pending' ? pendingCity : state;
             const active = group.some(s => s.city.id === selected);
-            return <g key={feature.properties.adcode} opacity={muted ? .22 : 1}>
-              <path d={path(feature) ?? ''} fill={fill} className={`province ${active ? 'selected' : ''}`} role="button" tabIndex={0} aria-label={`${feature.properties.name}，${main ? SEASONS[main.season].name : '暂无数据'}，点击查看代表城市`}
+            return <g key={feature.properties.adcode} opacity={muted ? .22 : 1} data-transition={transition} data-transition-from={appearance&&signalCity?signalCity.season:undefined} data-transition-target={appearance?.target}>
+              <path d={path(feature) ?? ''} fill={fill} className={`province ${active ? 'selected' : ''}`} role="button" tabIndex={0} aria-label={`${feature.properties.name}，代表城市多数季节：${main && average !== null ? SEASONS[main.season].name : '暂无数据'}${appearance&&signalCity ? `，部分已覆盖城市${SEASONS[signalCity.season].name}转${SEASONS[appearance.target].name}，${appearance.label}${transition === 'forecast' ? '，尚未实况确认' : ''}` : ''}，不表示全省一致，点击查看代表城市`}
                 onClick={() => state && onSelect(state.city.id)} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && state) { e.preventDefault(); onSelect(state.city.id); } }}
-                onMouseMove={e => state && setHover({ state, x: e.clientX, y: e.clientY })}/>
-              {showTransitions && group.some(s => s.transition) && <path d={path(feature) ?? ''} fill="url(#transition-stripes)" pointerEvents="none"/>}
+                onMouseMove={e => hoverState && setHover({ state: hoverState, x: e.clientX, y: e.clientY })}/>
             </g>;
           })}
           {(geo.features as Province[]).filter(f => f.properties.adcode === '100000_JD').map(f => <path key="islands-boundary" d={path(f) ?? ''} className="island-line"/>)}
@@ -82,12 +90,14 @@ export default function ChinaMap({ states, selected, onSelect, filter, showTrans
           const state = provincial.get(Number(code))?.[0];
           return <text key={code} x={xy[0]} y={xy[1]} className={`province-label ${Number(code) >= 810000 ? 'small' : ''}`} onClick={() => state && onSelect(state.city.id)}>{name}</text>;
         })}
-        {states.filter(s => showTransitions && s.transition || s.city.id === selected).map(s => {
+        {states.filter(s => showTransitions && (s.transition || forecastByCity[s.city.id]) || s.city.id === selected).map(s => {
           const xy = projection([s.city.lon,s.city.lat]); if (!xy) return null;
           const active = selected === s.city.id;
+          const appearance = showTransitions ? transitionAppearance(s, forecastByCity[s.city.id]) : null;
+          const color = s.average === null ? '#a4afa8' : appearance?.color ?? SEASONS[s.season].color;
           return <g key={s.city.id} className="city-marker" onClick={() => onSelect(s.city.id)} onMouseMove={e => setHover({ state: s, x: e.clientX, y: e.clientY })}>
-            <circle cx={xy[0]} cy={xy[1]} r={active ? 12 : 8} fill={active ? '#245c4c' : '#a77743'} opacity=".15"/>
-            <circle cx={xy[0]} cy={xy[1]} r={active ? 5 : 3.4} fill={active ? '#245c4c' : '#a77743'} stroke="white" strokeWidth="1.7"/>
+            <circle cx={xy[0]} cy={xy[1]} r={active ? 12 : 8} fill={color} opacity=".15"/>
+            <circle cx={xy[0]} cy={xy[1]} r={active ? 5 : 3.4} fill={color} stroke="white" strokeWidth="1.7"/>
           </g>;
         })}
       </g>
@@ -96,6 +106,6 @@ export default function ChinaMap({ states, selected, onSelect, filter, showTrans
     </svg>
     <div className="map-controls"><button onClick={() => setZoom(z => Math.min(1.7,z + .15))} aria-label="放大地图"><Plus size={17}/></button><button onClick={() => setZoom(z => Math.max(.85,z - .15))} aria-label="缩小地图"><Minus size={17}/></button><span/><button onClick={() => setZoom(1)} aria-label="重置地图"><LocateFixed size={17}/></button></div>
     {zoom !== 1 && <button className="reset-map" onClick={() => setZoom(1)}><RotateCcw size={12}/>重置视图</button>}
-    {hover && <div className="map-tooltip" style={{ left: Math.min(hover.x + 15, window.innerWidth - 225), top: Math.min(hover.y + 15, window.innerHeight - 115) }}><div><strong>{hover.state.city.name}</strong><span style={{ color: SEASONS[hover.state.season].color }}>{SEASONS[hover.state.season].name}</span></div><p>5 日滑动均温 <b>{hover.state.average?.toFixed(1) ?? '—'}°C</b></p><small>{hover.state.transition ? `${SEASONS[hover.state.transition.target].verb}观察中 · ${hover.state.transition.days}/5 天` : '点击查看气温与季节详情'}</small></div>}
+    {hover && <div className="map-tooltip" style={{ left: Math.min(hover.x + 15, window.innerWidth - 225), top: Math.min(hover.y + 15, window.innerHeight - 145) }}><div><strong>{hover.state.city.name}</strong><span style={{ color: SEASONS[hover.state.season].color }}>{SEASONS[hover.state.season].name}</span></div><p>5 日滑动均温 <b>{hover.state.average?.toFixed(1) ?? '—'}°C</b></p><small style={{color:hoverAppearance?.color}}>{forecastByCity[hover.state.city.id] ? `当前预报预计 ${forecastByCity[hover.state.city.id].expectedDate} ${SEASONS[forecastByCity[hover.state.city.id].target].verb}完成，尚未实况确认` : hover.state.transition ? `${SEASONS[hover.state.transition.target].verb}观察中 · ${hover.state.transition.days}/5 天` : '点击查看气温与季节详情'}</small></div>}
   </div>;
 }

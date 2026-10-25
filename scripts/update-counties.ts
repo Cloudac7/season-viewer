@@ -1,6 +1,6 @@
 import {readFile,writeFile,rename,mkdir,open,unlink} from 'node:fs/promises';
 import {fetchCountyBatch} from '../src/lib/county-weather';
-import {EMPTY_COUNTY_WEATHER,validCountyWeather} from '../src/lib/counties';
+import {EMPTY_COUNTY_WEATHER,validCountyWeather,countyForecastIsFresh,countyHistoricalDays} from '../src/lib/counties';
 import type {CountyCatalog,CountyWeather} from '../src/lib/counties';
 import {beijingDate,addDays} from '../src/lib/season';
 const directory=new URL('../public/data/',import.meta.url),lock=new URL('../data-sources/county-update.lock',import.meta.url);
@@ -16,7 +16,10 @@ try{
   let data:CountyWeather=structuredClone(EMPTY_COUNTY_WEATHER);
   try{const value=JSON.parse(await readFile(new URL('county-weather.json',directory),'utf8'));if(validCountyWeather(value,catalog))data=value;}catch{/* initial snapshot */}
   const latest=addDays(beijingDate(),-1);
-  const pending=catalog.units.filter(unit=>!data.records[unit.id]?.days.some(day=>day.date===latest&&day.mean!==null));
+  const pending=catalog.units.filter(unit=>{
+    const series=data.records[unit.id];
+    return !series||!countyHistoricalDays(series).some(day=>day.date===latest&&day.mean!==null)||!countyForecastIsFresh(series);
+  });
   const batchSize=40;
   console.log(`County weather: ${catalog.units.length-pending.length}/${catalog.units.length} current; ${pending.length} pending`);
   for(let i=0;i<pending.length;i+=batchSize){

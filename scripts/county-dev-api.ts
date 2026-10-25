@@ -1,7 +1,7 @@
 import {readFile} from 'node:fs/promises';
 import {spawn} from 'node:child_process';
 import type {Plugin} from 'vite';
-import {EMPTY_COUNTY_WEATHER} from '../src/lib/counties';
+import {countyForecastIsFresh,countyHistoricalDays,EMPTY_COUNTY_WEATHER} from '../src/lib/counties';
 import type {CountyCatalog,CountyWeather} from '../src/lib/counties';
 import {addDays,beijingDate} from '../src/lib/season';
 
@@ -18,7 +18,10 @@ export function countyDevApi():Plugin{
         try{
           const catalog=JSON.parse(await readFile(new URL('public/data/counties.json',root),'utf8')) as CountyCatalog;
           const latest=addDays(beijingDate(),-1);
-          if(catalog.units.some(unit=>!data.records[unit.id]?.days.some(day=>day.date===latest&&day.mean!==null))){
+          if(catalog.units.some(unit=>{
+            const series=data.records[unit.id];
+            return !series||!countyHistoricalDays(series).some(day=>day.date===latest&&day.mean!==null)||!countyForecastIsFresh(series);
+          })){
             worker=spawn(process.execPath,['--import','tsx','scripts/update-counties.ts'],{cwd:root,stdio:'inherit'});
             worker.once('exit',()=>{worker=null;});worker.once('error',()=>{worker=null;});
           }

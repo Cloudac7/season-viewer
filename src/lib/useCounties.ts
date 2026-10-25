@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react';
 import {feature} from 'topojson-client';
 import type {Topology,GeometryCollection} from 'topojson-specification';
-import {classifyCounty,EMPTY_COUNTY_WEATHER,mergeCountyWeather,summarizePrefectures,validCountyWeather} from './counties';
+import {classifyCounty,countyForecastIsFresh,countyHistoricalDays,EMPTY_COUNTY_WEATHER,mergeCountyWeather,summarizePrefectures,validCountyWeather} from './counties';
 import type {CountyBoundaries,CountyCatalog,CountyReading,CountyWeather} from './counties';
 import {addDays,beijingDate} from './season';
 
@@ -46,15 +46,16 @@ export function useCounties(date:string){
   const ready=useMemo(()=>readings.filter(reading=>reading.state!==null),[readings]);
   const summaries=useMemo(()=>summarizePrefectures(readings),[readings]);
   const latest=addDays(beijingDate(),-1);
-  const completeCount=useMemo(()=>catalog?.units.filter(unit=>data.records[unit.id]?.days.some(day=>day.date===latest&&day.mean!==null)).length??0,[catalog,data,latest]);
+  const completeCount=useMemo(()=>catalog?.units.filter(unit=>{const series=data.records[unit.id];return series&&countyHistoricalDays(series).some(day=>day.date===latest&&day.mean!==null);}).length??0,[catalog,data,latest]);
+  const forecastCount=useMemo(()=>catalog?.units.filter(unit=>countyForecastIsFresh(data.records[unit.id])).length??0,[catalog,data,latest]);
   const firstUsableDate=useMemo(()=>{
-    const starts=Object.values(data.records).map(series=>series.days[0]?.date).filter((v):v is string=>!!v).sort();
+    const starts=Object.values(data.records).map(series=>countyHistoricalDays(series)[0]?.date).filter((v):v is string=>!!v).sort();
     return starts.length?addDays(starts.at(-1)!,8):latest;
   },[data,latest]);
   useEffect(()=>{
     if(!catalog)return;
-    const timer=setTimeout(()=>void refresh(),hasUpdater&&completeCount<catalog.units.length?15000:60*60*1000);
+    const timer=setTimeout(()=>void refresh(),hasUpdater&&(completeCount<catalog.units.length||forecastCount<catalog.units.length)?15000:60*60*1000);
     return()=>clearTimeout(timer);
-  },[catalog,completeCount,refresh,revision,hasUpdater]);
-  return {catalog,boundaries,data,readings,ready,summaries,completeCount,firstUsableDate,loading,error,refresh,hasUpdater};
+  },[catalog,completeCount,forecastCount,refresh,revision,hasUpdater]);
+  return {catalog,boundaries,data,readings,ready,summaries,completeCount,forecastCount,firstUsableDate,loading,error,refresh,hasUpdater};
 }

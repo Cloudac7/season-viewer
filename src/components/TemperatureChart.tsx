@@ -7,7 +7,7 @@ export default function TemperatureChart({ state, date, input }: { state: Season
   const start = addDays(date, -9);
   const today = beijingDate();
   const averages = rollingMeans(input);
-  const points = input.map((d,i) => ({ ...d, average: averages[i] })).filter(d => d.date >= start && d.date <= addDays(date, 3));
+  const points = input.map((d,i) => ({ ...d, average: averages[i] })).filter(d => d.date >= start && d.date <= addDays(date, 7));
   const values = points.flatMap(d => [d.mean, d.average]).filter((v): v is number => v !== null);
   const low = Math.floor((Math.min(8,...values) - 2) / 5) * 5;
   const high = Math.ceil((Math.max(24,...values) + 2) / 5) * 5;

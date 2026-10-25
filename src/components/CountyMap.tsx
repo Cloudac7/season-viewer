@@ -5,7 +5,7 @@ import {LocateFixed,Minus,Plus} from 'lucide-react';
 import type {Region,Season} from '../types';
 import type {CountyBoundaries,CountyReading} from '../lib/counties';
 import {SEASONS} from '../data';
-import {sampleColor} from '../lib/field';
+import {countyMapColor,countyTransitionStatus,countyTransitionAppearance} from '../lib/map-status';
 
 interface Props{readings:CountyReading[];boundaries:CountyBoundaries|null;selected:string;focus:{id:string;revision:number}|null;onSelect:(id:string,locate?:boolean)=>void;filter:Season|'all';region:Region|'all';layer:'season'|'temperature';showTransitions:boolean;showPoints:boolean}
 export default function CountyMap({readings,boundaries,selected,focus,onSelect,filter,region,layer,showTransitions,showPoints}:Props){
@@ -55,15 +55,14 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
       }}
       onPointerUp={e=>{const drag=gesture.current;gesture.current=null;if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);if(drag?.id&&!drag.moved)onSelect(drag.id);}}
       onPointerCancel={()=>{gesture.current=null;}}>
-      <defs><pattern id={`${id}-pending`} width="8" height="8" patternUnits="userSpaceOnUse" patternTransform={`rotate(35) scale(${1/view.zoom})`}><rect width="2" height="8" fill="#fff" opacity=".65"/></pattern><clipPath id={`${id}-sea`}><rect x="2" y="2" width="75" height="80"/></clipPath></defs>
+      <defs><clipPath id={`${id}-sea`}><rect x="2" y="2" width="75" height="80"/></clipPath></defs>
       <g className="county-map-transform" transform={`translate(${420+view.x} ${275+view.y}) scale(${view.zoom}) translate(-420 -275)`}>
         {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="#e0e6e2" stroke="#b3c0b0" strokeWidth={.5/view.zoom} pointerEvents="none"/>)}
         {visible.map(shape=>{
           const reading=indexed.get(shape.id);if(!reading)return null;
           const muted=(region!=='all'&&reading.unit.region!==region)||(filter!=='all'&&reading.state?.season!==filter);
-          return <g key={shape.id} opacity={muted?.2:1} className="county-area" data-season={reading.state?.season??'missing'}>
-            <path data-county={shape.id} d={shape.d} fill={reading.state?sampleColor(reading.state,layer):'#e0e6e2'} stroke="#f8faf5" strokeWidth={.28/view.zoom} className="county-shape"/>
-            {showTransitions&&reading.state?.transition&&<path d={shape.d} fill={`url(#${id}-pending)`} pointerEvents="none"/>}
+          return <g key={shape.id} opacity={muted?.2:1} className="county-area" data-season={reading.state?.season??'missing'} data-transition={countyTransitionStatus(reading)}>
+            <path data-county={shape.id} d={shape.d} fill={countyMapColor(reading,layer,showTransitions)} stroke="#f8faf5" strokeWidth={.28/view.zoom} className="county-shape"/>
           </g>;
         })}
         {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="none" stroke="#f6faf1" strokeWidth={.85/view.zoom} pointerEvents="none"/>)}
@@ -76,10 +75,10 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
         {view.zoom>=3&&label&&current&&<text x={label[0]} y={label[1]-8/view.zoom} className="county-selected-label" fontSize={11*840/width/view.zoom} pointerEvents="none">{current.unit.name}</text>}
       </g>
       <g transform="translate(36,455)" className="compass"><path d="M0 34V0m-5 8L0 0l5 8"/><text x="0" y="-9">N</text></g>
-      <g transform="translate(728,424)"><rect width="79" height="102" rx="3" fill="#f8faf8" stroke="#dce4de"/><g clipPath={`url(#${id}-sea)`}>{provinces?.features.filter(f=>f.properties?.adcode===460000||f.properties?.adcode==='100000_JD').map((f,i)=><path key={i} d={seaPath(f)??''} fill="#d5dfd3" stroke="#a5b7a5" strokeWidth=".5"/>)}{boundaries.features.filter(f=>f.properties.id==='460300').map(f=><path key="sansha-counties" d={seaPath(f)??''} fill={indexed.get('460300')?.state?sampleColor(indexed.get('460300')!.state!,layer):'#e0e6e2'} stroke="#a5b7a5" strokeWidth=".3" pointerEvents="none"/>)}</g><text x="39.5" y="92" className="inset-label">南海诸岛</text></g>
+      <g transform="translate(728,424)"><rect width="79" height="102" rx="3" fill="#f8faf8" stroke="#dce4de"/><g clipPath={`url(#${id}-sea)`}>{provinces?.features.filter(f=>f.properties?.adcode===460000||f.properties?.adcode==='100000_JD').map((f,i)=><path key={i} d={seaPath(f)??''} fill="#d5dfd3" stroke="#a5b7a5" strokeWidth=".5"/>)}{boundaries.features.filter(f=>f.properties.id==='460300').map(f=><path key="sansha-counties" d={seaPath(f)??''} fill={indexed.has('460300')?countyMapColor(indexed.get('460300')!,layer,showTransitions):'#e0e6e2'} stroke="#a5b7a5" strokeWidth=".3" pointerEvents="none"/>)}</g><text x="39.5" y="92" className="inset-label">南海诸岛</text></g>
     </svg>
     <div className="field-map-caption"><i/>{view.zoom.toFixed(1)}× · 真实县界 · 代表点参考季节</div>
     <div className="map-controls field-map-controls"><button onClick={()=>changeZoom(1.4)} aria-label="放大县级地图"><Plus size={17}/></button><button onClick={()=>changeZoom(1/1.4)} aria-label="缩小县级地图"><Minus size={17}/></button><span/><button onClick={()=>setView({zoom:1,x:0,y:0})} aria-label="重置县级地图"><LocateFixed size={17}/></button></div>
-    {hover&&<div className="map-tooltip county-tooltip" style={{left:Math.min(hover.x+15,window.innerWidth-245),top:Math.min(hover.y+15,window.innerHeight-170)}}><div><strong>{hover.reading.unit.name}</strong><span>{hover.reading.state?SEASONS[hover.reading.state.season].name:'数据不足'}</span></div><small>{hover.reading.unit.province} · {hover.reading.unit.city} · {hover.reading.unit.id}</small><p>代表点 5 日均温 <b>{hover.reading.state?.average?.toFixed(1)??'—'}°C</b></p><small>{hover.reading.state?.transition?`${SEASONS[hover.reading.state.transition.target].verb}观察中 · ${hover.reading.state.transition.days}/5 天`:'点击查看县区详情与日温曲线'}</small><footer>Open-Meteo 模型 · 非全县实测或全县均温</footer></div>}
+    {hover&&<div className="map-tooltip county-tooltip" style={{left:Math.min(hover.x+15,window.innerWidth-245),top:Math.min(hover.y+15,window.innerHeight-170)}}><div><strong>{hover.reading.unit.name}</strong><span>{hover.reading.state?SEASONS[hover.reading.state.season].name:'数据不足'}</span></div><small>{hover.reading.unit.province} · {hover.reading.unit.city} · {hover.reading.unit.id}</small><p>代表点 5 日均温 <b>{hover.reading.state?.average?.toFixed(1)??'—'}°C</b></p><small className={hover.reading.forecastTransition?'forecast-tooltip':''} style={{color:countyTransitionAppearance(hover.reading)?.color}}>{hover.reading.forecastTransition?`预计 ${hover.reading.forecastTransition.expectedDate.slice(5).replace('-','/')} 完成${SEASONS[hover.reading.forecastTransition.target].verb} · 尚待完整日确认`:hover.reading.state?.transition?`${SEASONS[hover.reading.state.transition.target].verb}进行中 · ${hover.reading.state.transition.days}/5 天`:'点击查看县区详情与日温曲线'}</small><footer>Open-Meteo 模型 · 非全县实测或全县均温</footer></div>}
   </div>;
 }

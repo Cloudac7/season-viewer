@@ -7,6 +7,17 @@ export const SEASONS: Record<Season, { name: string; color: string; fill: string
   winter: { name: '冬季', color: '#718fa5', fill: '#afc5d7', pale: '#edf2f6', verb: '入冬', en: 'WINTER' },
 };
 export const SEASON_ORDER: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+interface TransitionColor {fill:string;color:string;pale:string}
+export const TRANSITION_PALETTES:Partial<Record<`${Season}-${Season}`,{pending:TransitionColor;forecast:TransitionColor}>> = {
+  'winter-spring': {pending:{fill:'#69a1a4',color:'#3c777b',pale:'#eaf3f3'},forecast:{fill:'#74b18a',color:'#43815a',pale:'#edf6ef'}},
+  'spring-summer': {pending:{fill:'#b9b46e',color:'#858037',pale:'#f5f4e8'},forecast:{fill:'#d9ac4d',color:'#967024',pale:'#faf3e2'}},
+  'summer-autumn': {pending:{fill:'#d78b53',color:'#a06432',pale:'#faf0e7'},forecast:{fill:'#ba5d56',color:'#963f3c',pale:'#f8eceb'}},
+  'autumn-winter': {pending:{fill:'#a84250',color:'#903644',pale:'#f8e9ec'},forecast:{fill:'#8871b5',color:'#6d5596',pale:'#f2edf8'}},
+  'spring-winter': {pending:{fill:'#729da5',color:'#497681',pale:'#edf3f5'},forecast:{fill:'#8a80b4',color:'#685e93',pale:'#f1eff7'}},
+  'summer-spring': {pending:{fill:'#b3b36b',color:'#7c7f35',pale:'#f4f4e7'},forecast:{fill:'#79b38c',color:'#46815b',pale:'#edf6ef'}},
+  'autumn-summer': {pending:{fill:'#ce8060',color:'#a25b40',pale:'#faeee8'},forecast:{fill:'#dcab50',color:'#9c7325',pale:'#faf3e3'}},
+  'winter-autumn': {pending:{fill:'#9983aa',color:'#79618b',pale:'#f2eef5'},forecast:{fill:'#bd6a63',color:'#974a45',pale:'#f8eeec'}},
+};
 export const REGIONS: Region[] = ['华北', '东北', '华东', '华中', '华南', '西南', '西北', '港澳台'];
 
 // annual / amplitude are used ONLY by the explicitly labelled offline demo.

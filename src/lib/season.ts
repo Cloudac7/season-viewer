@@ -1,7 +1,9 @@
 import type { City, DayTemperature, Season, SeasonState, Transition } from '../types';
 
+const beijingDateFormatter = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' });
+
 export function beijingDate(now = new Date()): string {
-  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(now);
+  return beijingDateFormatter.format(now);
 }
 export function addDays(date: string, amount: number) {
   const d = new Date(`${date}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + amount);
