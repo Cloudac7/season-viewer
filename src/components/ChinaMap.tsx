@@ -4,6 +4,7 @@ import type { FeatureCollection, Feature, Geometry } from 'geojson';
 import { LocateFixed, Minus, Plus, RotateCcw } from 'lucide-react';
 import type { Season, SeasonState } from '../types';
 import { SEASONS } from '../data';
+import { temperatureColor } from '../lib/field';
 import type { ForecastTransition } from '../lib/forecast';
 import { transitionAppearance } from '../lib/map-status';
 
@@ -22,11 +23,6 @@ const labels: Record<string, [number, number, string]> = {
   '620000':[102.8,37.7,'甘肃'], '630000':[96.3,35.6,'青海'], '640000':[106.1,37.3,'宁夏'],
   '650000':[85,41.8,'新疆'], '710000':[121.3,23.5,'台湾'], '810000':[115.3,21.9,'香港'], '820000':[112.6,21.3,'澳门'],
 };
-function temperatureColor(temp: number) {
-  if (temp < 5) return '#9bb8cf'; if (temp < 10) return '#b4cad9';
-  if (temp < 15) return '#c7d6c4'; if (temp < 20) return '#dbcfa6';
-  if (temp < 25) return '#e3b981'; return '#d99a78';
-}
 export default function ChinaMap({ states, forecastByCity, selected, onSelect, filter, showTransitions, layer }: Props) {
   const [geo, setGeo] = useState<FeatureCollection | null>(null);
   const [mapError, setMapError] = useState(false);

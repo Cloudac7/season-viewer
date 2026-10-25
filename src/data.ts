@@ -1,22 +1,22 @@
 import type { City, Region, Season } from './types';
 
 export const SEASONS: Record<Season, { name: string; color: string; fill: string; pale: string; verb: string; en: string }> = {
-  spring: { name: '春季', color: '#4b9975', fill: '#b8d4ac', pale: '#eef5ec', verb: '入春', en: 'SPRING' },
-  summer: { name: '夏季', color: '#d98c45', fill: '#e8c078', pale: '#fcf3e4', verb: '入夏', en: 'SUMMER' },
-  autumn: { name: '秋季', color: '#c4755e', fill: '#dba18a', pale: '#f9ede8', verb: '入秋', en: 'AUTUMN' },
-  winter: { name: '冬季', color: '#718fa5', fill: '#afc5d7', pale: '#edf2f6', verb: '入冬', en: 'WINTER' },
+  spring: { name: '春季', color: '#35784b', fill: '#79c77d', pale: '#edf7ee', verb: '入春', en: 'SPRING' },
+  summer: { name: '夏季', color: '#a57418', fill: '#f4d05b', pale: '#fcf5df', verb: '入夏', en: 'SUMMER' },
+  autumn: { name: '秋季', color: '#b9682c', fill: '#ed9b4e', pale: '#fff0e2', verb: '入秋', en: 'AUTUMN' },
+  winter: { name: '冬季', color: '#397da9', fill: '#77b8e5', pale: '#eaf4fb', verb: '入冬', en: 'WINTER' },
 };
 export const SEASON_ORDER: Season[] = ['spring', 'summer', 'autumn', 'winter'];
 interface TransitionColor {fill:string;color:string;pale:string}
 export const TRANSITION_PALETTES:Partial<Record<`${Season}-${Season}`,{pending:TransitionColor;forecast:TransitionColor}>> = {
-  'winter-spring': {pending:{fill:'#69a1a4',color:'#3c777b',pale:'#eaf3f3'},forecast:{fill:'#74b18a',color:'#43815a',pale:'#edf6ef'}},
-  'spring-summer': {pending:{fill:'#b9b46e',color:'#858037',pale:'#f5f4e8'},forecast:{fill:'#d9ac4d',color:'#967024',pale:'#faf3e2'}},
-  'summer-autumn': {pending:{fill:'#d78b53',color:'#a06432',pale:'#faf0e7'},forecast:{fill:'#ba5d56',color:'#963f3c',pale:'#f8eceb'}},
-  'autumn-winter': {pending:{fill:'#a84250',color:'#903644',pale:'#f8e9ec'},forecast:{fill:'#8871b5',color:'#6d5596',pale:'#f2edf8'}},
-  'spring-winter': {pending:{fill:'#729da5',color:'#497681',pale:'#edf3f5'},forecast:{fill:'#8a80b4',color:'#685e93',pale:'#f1eff7'}},
-  'summer-spring': {pending:{fill:'#b3b36b',color:'#7c7f35',pale:'#f4f4e7'},forecast:{fill:'#79b38c',color:'#46815b',pale:'#edf6ef'}},
-  'autumn-summer': {pending:{fill:'#ce8060',color:'#a25b40',pale:'#faeee8'},forecast:{fill:'#dcab50',color:'#9c7325',pale:'#faf3e3'}},
-  'winter-autumn': {pending:{fill:'#9983aa',color:'#79618b',pale:'#f2eef5'},forecast:{fill:'#bd6a63',color:'#974a45',pale:'#f8eeec'}},
+  'winter-spring': {pending:{fill:'#48b6b2',color:'#267b78',pale:'#e7f6f4'},forecast:{fill:'#45a568',color:'#2c7547',pale:'#eaf6ee'}},
+  'spring-summer': {pending:{fill:'#b5c846',color:'#72801e',pale:'#f3f7df'},forecast:{fill:'#e2b22f',color:'#96701b',pale:'#fbf3dc'}},
+  'summer-autumn': {pending:{fill:'#df793a',color:'#a25525',pale:'#fff0e6'},forecast:{fill:'#cb4c3c',color:'#99392d',pale:'#fcece8'}},
+  'autumn-winter': {pending:{fill:'#b7354f',color:'#963047',pale:'#fbe9ed'},forecast:{fill:'#8754b0',color:'#6c408e',pale:'#f3eafa'}},
+  'spring-winter': {pending:{fill:'#419fb4',color:'#2b7484',pale:'#e6f4f7'},forecast:{fill:'#7062b5',color:'#564991',pale:'#efedfa'}},
+  'summer-spring': {pending:{fill:'#a9be42',color:'#728025',pale:'#f1f6e0'},forecast:{fill:'#3b9c68',color:'#287348',pale:'#e8f5ee'}},
+  'autumn-summer': {pending:{fill:'#e5843e',color:'#a85b25',pale:'#fff0e4'},forecast:{fill:'#d9aa29',color:'#916d16',pale:'#fbf3dc'}},
+  'winter-autumn': {pending:{fill:'#9b6eb0',color:'#774e8a',pale:'#f4ebf8'},forecast:{fill:'#cc6152',color:'#9c453b',pale:'#fbece8'}},
 };
 export const REGIONS: Region[] = ['华北', '东北', '华东', '华中', '华南', '西南', '西北', '港澳台'];
 

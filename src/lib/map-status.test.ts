@@ -34,8 +34,8 @@ test('autumn to winter has deep red observation and purple forecast steps distin
   assert.equal(pending.state?.season,'autumn');
   assert.equal(pending.state?.transition?.target,'winter');
   assert.equal(forecast.forecastTransition?.target,'winter');
-  assert.equal(countyMapColor(pending,'season',true),'#a84250');
-  assert.equal(countyMapColor(forecast,'season',true),'#8871b5');
+  assert.equal(countyMapColor(pending,'season',true),'#b7354f');
+  assert.equal(countyMapColor(forecast,'season',true),'#8754b0');
   assert.equal(countyMapColor(forecast,'season',false),SEASONS.autumn.fill);
   assert.notEqual(countyMapColor(forecast,'season',true),TRANSITION_PALETTES['summer-autumn']!.forecast.fill);
 });

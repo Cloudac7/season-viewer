@@ -7,8 +7,8 @@ import type {CountyBoundaries,CountyReading} from '../lib/counties';
 import {SEASONS} from '../data';
 import {countyMapColor,countyTransitionStatus,countyTransitionAppearance} from '../lib/map-status';
 
-interface Props{readings:CountyReading[];boundaries:CountyBoundaries|null;selected:string;focus:{id:string;revision:number}|null;onSelect:(id:string,locate?:boolean)=>void;filter:Season|'all';region:Region|'all';layer:'season'|'temperature';showTransitions:boolean;showPoints:boolean}
-export default function CountyMap({readings,boundaries,selected,focus,onSelect,filter,region,layer,showTransitions,showPoints}:Props){
+interface Props{readings:CountyReading[];boundaries:CountyBoundaries|null;selected:string;focus:{id:string;revision:number}|null;onSelect:(id:string,locate?:boolean)=>void;filter:Season|'all';region:Region|'all';layer:'season'|'temperature';showTransitions:boolean;showPoints:boolean;showBoundaries:boolean}
+export default function CountyMap({readings,boundaries,selected,focus,onSelect,filter,region,layer,showTransitions,showPoints,showBoundaries=false}:Props){
   const [provinces,setProvinces]=useState<FeatureCollection|null>(null);
   const [view,setView]=useState({zoom:1,x:0,y:0}),[hover,setHover]=useState<{reading:CountyReading;x:number;y:number}|null>(null);
   const [width,setWidth]=useState(840);
@@ -41,7 +41,7 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
   const current=indexed.get(selected),active=shapeById.get(selected);
   const label=current?projection(current.unit.display):null;
   if(!boundaries)return <div className="map-loading">正在载入真实县级边界…</div>;
-  return <div className="map-canvas field-canvas county-map-canvas" onMouseLeave={()=>setHover(null)}>
+  return <div className={`map-canvas field-canvas county-map-canvas county-borders-${showBoundaries?'visible':'hidden'}`} data-county-borders={showBoundaries?'visible':'hidden'} onMouseLeave={()=>setHover(null)}>
     <div className="map-watermark">COUNTY SEASONS<br/><span>OPEN-METEO · DAILY MODEL</span></div>
     <svg ref={svg} className="china-map field-map-svg county-map-svg" viewBox="0 0 840 550" role="img" tabIndex={0} aria-label={`全国真实县界季节地图，${readings.length}个行政单元，点击县区查看代表点数据，拖动平移`}
       onKeyDown={e=>{if(e.key==='+'||e.key==='='){e.preventDefault();changeZoom(1.4);}if(e.key==='-'){e.preventDefault();changeZoom(1/1.4);}if(e.key==='0')setView({zoom:1,x:0,y:0});if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();setView(v=>({...v,x:v.x+(e.key==='ArrowLeft'?60:e.key==='ArrowRight'?-60:0),y:v.y+(e.key==='ArrowUp'?60:e.key==='ArrowDown'?-60:0)}));}}}
@@ -57,15 +57,16 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
       onPointerCancel={()=>{gesture.current=null;}}>
       <defs><clipPath id={`${id}-sea`}><rect x="2" y="2" width="75" height="80"/></clipPath></defs>
       <g className="county-map-transform" transform={`translate(${420+view.x} ${275+view.y}) scale(${view.zoom}) translate(-420 -275)`}>
-        {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="#e0e6e2" stroke="#b3c0b0" strokeWidth={.5/view.zoom} pointerEvents="none"/>)}
+        {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="#e0e6e2" stroke="#667786" strokeOpacity={.4} strokeWidth={.5/view.zoom} pointerEvents="none"/>)}
         {visible.map(shape=>{
           const reading=indexed.get(shape.id);if(!reading)return null;
           const muted=(region!=='all'&&reading.unit.region!==region)||(filter!=='all'&&reading.state?.season!==filter);
+          const fill=countyMapColor(reading,layer,showTransitions);
           return <g key={shape.id} opacity={muted?.2:1} className="county-area" data-season={reading.state?.season??'missing'} data-transition={countyTransitionStatus(reading)}>
-            <path data-county={shape.id} d={shape.d} fill={countyMapColor(reading,layer,showTransitions)} stroke="#f8faf5" strokeWidth={.28/view.zoom} className="county-shape"/>
+            <path data-county={shape.id} d={shape.d} fill={fill} stroke={showBoundaries?'rgba(248,250,245,.62)':fill} strokeWidth={(showBoundaries ? .4 : .35)/view.zoom} className="county-shape"/>
           </g>;
         })}
-        {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="none" stroke="#f6faf1" strokeWidth={.85/view.zoom} pointerEvents="none"/>)}
+        {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="none" stroke="#667786" strokeOpacity={.4} strokeWidth={.5/view.zoom} pointerEvents="none"/>)}
         {active&&<path d={active.d} fill="none" stroke="#315e48" strokeWidth={1.5/view.zoom} pointerEvents="none"/>}
         {view.zoom<=2&&provinces?.features.filter(feature=>typeof feature.properties?.adcode==='number'&&Number(feature.properties.adcode)<810000).map(feature=>{
           const center=feature.properties?.centroid??feature.properties?.center;if(!center)return null;const xy=projection(center);if(!xy)return null;
@@ -75,7 +76,7 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
         {view.zoom>=3&&label&&current&&<text x={label[0]} y={label[1]-8/view.zoom} className="county-selected-label" fontSize={11*840/width/view.zoom} pointerEvents="none">{current.unit.name}</text>}
       </g>
       <g transform="translate(36,455)" className="compass"><path d="M0 34V0m-5 8L0 0l5 8"/><text x="0" y="-9">N</text></g>
-      <g transform="translate(728,424)"><rect width="79" height="102" rx="3" fill="#f8faf8" stroke="#dce4de"/><g clipPath={`url(#${id}-sea)`}>{provinces?.features.filter(f=>f.properties?.adcode===460000||f.properties?.adcode==='100000_JD').map((f,i)=><path key={i} d={seaPath(f)??''} fill="#d5dfd3" stroke="#a5b7a5" strokeWidth=".5"/>)}{boundaries.features.filter(f=>f.properties.id==='460300').map(f=><path key="sansha-counties" d={seaPath(f)??''} fill={indexed.has('460300')?countyMapColor(indexed.get('460300')!,layer,showTransitions):'#e0e6e2'} stroke="#a5b7a5" strokeWidth=".3" pointerEvents="none"/>)}</g><text x="39.5" y="92" className="inset-label">南海诸岛</text></g>
+      <g transform="translate(728,424)"><rect width="79" height="102" rx="3" fill="#f8faf8" stroke="#dce4de"/><g clipPath={`url(#${id}-sea)`}>{provinces?.features.filter(f=>f.properties?.adcode===460000||f.properties?.adcode==='100000_JD').map((f,i)=><path key={i} d={seaPath(f)??''} fill="#d5dfd3" stroke="#667786" strokeOpacity={.4} strokeWidth=".5"/>)}{boundaries.features.filter(f=>f.properties.id==='460300').map(f=>{const reading=indexed.get('460300'),fill=reading?countyMapColor(reading,layer,showTransitions):'#e0e6e2';return <path key="sansha-counties" d={seaPath(f)??''} fill={fill} stroke={showBoundaries?'rgba(248,250,245,.62)':fill} strokeWidth={showBoundaries ? .4 : .35} pointerEvents="none"/>;})}</g><text x="39.5" y="92" className="inset-label">南海诸岛</text></g>
     </svg>
     <div className="field-map-caption"><i/>{view.zoom.toFixed(1)}× · 真实县界 · 代表点参考季节</div>
     <div className="map-controls field-map-controls"><button onClick={()=>changeZoom(1.4)} aria-label="放大县级地图"><Plus size={17}/></button><button onClick={()=>changeZoom(1/1.4)} aria-label="缩小县级地图"><Minus size={17}/></button><span/><button onClick={()=>setView({zoom:1,x:0,y:0})} aria-label="重置县级地图"><LocateFixed size={17}/></button></div>
