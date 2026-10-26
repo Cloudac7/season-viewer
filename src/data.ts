@@ -13,11 +13,11 @@ interface TransitionColor {fill:string;color:string;pale:string}
 export const TRANSITION_PALETTES:Partial<Record<`${Season}-${Season}`,{pending:TransitionColor;forecast:TransitionColor}>> = {
   'winter-spring': {pending:{fill:'#45a568',color:'#2c7547',pale:'#eaf6ee'},forecast:{fill:'#48b6b2',color:'#267b78',pale:'#e7f6f4'}},
   'spring-summer': {pending:{fill:'#e2b22f',color:'#96701b',pale:'#fbf3dc'},forecast:{fill:'#b5c846',color:'#72801e',pale:'#f3f7df'}},
-  'summer-autumn': {pending:{fill:'#cb4c3c',color:'#99392d',pale:'#fcece8'},forecast:{fill:'#df793a',color:'#a25525',pale:'#fff0e6'}},
+  'summer-autumn': {pending:{fill:'#bc6b27',color:'#8c4f1c',pale:'#fbefdf'},forecast:{fill:'#df793a',color:'#a25525',pale:'#fff0e6'}},
   'autumn-winter': {pending:{fill:'#8754b0',color:'#6c408e',pale:'#f3eafa'},forecast:{fill:'#b7354f',color:'#963047',pale:'#fbe9ed'}},
   'spring-winter': {pending:{fill:'#7062b5',color:'#564991',pale:'#efedfa'},forecast:{fill:'#419fb4',color:'#2b7484',pale:'#e6f4f7'}},
   'summer-spring': {pending:{fill:'#3b9c68',color:'#287348',pale:'#e8f5ee'},forecast:{fill:'#a9be42',color:'#728025',pale:'#f1f6e0'}},
-  'autumn-summer': {pending:{fill:'#d9aa29',color:'#916d16',pale:'#fbf3dc'},forecast:{fill:'#e5843e',color:'#a85b25',pale:'#fff0e4'}},
+  'autumn-summer': {pending:{fill:'#d9aa29',color:'#916d16',pale:'#fbf3dc'},forecast:{fill:'#aaa33b',color:'#756e20',pale:'#f6f3df'}},
   'winter-autumn': {pending:{fill:'#cc6152',color:'#9c453b',pale:'#fbece8'},forecast:{fill:'#9b6eb0',color:'#774e8a',pale:'#f4ebf8'}},
 };
 export const REGIONS: Region[] = ['华北', '东北', '华东', '华中', '华南', '西南', '西北', '港澳台'];
