@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
+    "deploy:cloudflare": "npm run build && wrangler deploy",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --import tsx --test src/lib/*.test.ts",
     "data:update": "node --import tsx scripts/update-snapshot.ts",
@@ -44,6 +45,10 @@
     "topojson-simplify": "^3.0.3",
     "tsx": "^4.19.4",
     "typescript": "~5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "wrangler": "^4.152.0"
+  },
+  "overrides": {
+    "undici": "7.30.1"
   }
 }

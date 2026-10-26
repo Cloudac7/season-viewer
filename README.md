@@ -13,6 +13,7 @@ npm ci
 npm run dev                    # predev 自动预计算，默认 http://127.0.0.1:5173/
 npm test                       # 判季、时效、缺测、区划、二进制与曲面几何测试
 npm run build                  # prebuild 预计算 → TypeScript/Vite → 精简发布资产
+npm run deploy:cloudflare      # 构建并用 Wrangler 部署到 season.tomori.xyz
 npm run preview                # 预览 dist/，只读取静态快照
 npm run data:precompute        # 离线预计算；资料/算法未变时复用缓存
 npm run data:refresh           # 更新县级和规则气温，随后生成新发布快照（需联网）
@@ -23,6 +24,8 @@ npm run data:terrain:import    # 导入公开 Terrarium DEM（需联网，原始
 ```
 
 `data:refresh` 遇上游失败会停止后续下载，仍尝试用已有资料生成可用快照，错误以退出码报告。429 不循环重试或绕过配额。正式静态部署需由部署环境每日运行 `data:refresh` 再执行 `build`、发布 `dist/`；浏览器不会直接向 Open-Meteo 发起全国 API 请求。静态托管本身不会获取新天气，页面保留真实资料时间。
+
+Cloudflare 部署使用 Wrangler 与 Workers Static Assets。首次使用前执行 `npx wrangler login` 完成 Cloudflare OAuth；`npm run deploy:cloudflare` 会重新构建（包含每日快照预计算），再将 `dist/` 部署到配置的 `season.tomori.xyz` 自定义域。Cloudflare 账号须包含并启用 `tomori.xyz` zone，且该子域尚未绑定其他 CNAME/服务；Wrangler 会为 Workers 自定义域建立 DNS 记录并申请证书。后续每次天气资料刷新后重新运行此命令即可发布新快照。
 
 ## 计算前移与缓存
 
