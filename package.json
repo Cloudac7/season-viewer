@@ -10,7 +10,10 @@
     "test": "node --import tsx --test src/lib/*.test.ts",
     "data:update": "node --import tsx scripts/update-snapshot.ts",
     "data:counties:update": "node --import tsx scripts/update-counties.ts",
-    "data:counties:import": "node --import tsx scripts/import-counties.ts"
+    "data:counties:import": "node --import tsx scripts/import-counties.ts",
+    "data:grid:import": "node --import tsx scripts/import-weather-grid.ts",
+    "data:grid:update": "node --import tsx scripts/update-weather-grid.ts",
+    "data:terrain:import": "node --import tsx scripts/import-terrain.ts"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",
@@ -23,11 +26,13 @@
     "@types/d3-geo": "^3.1.0",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^22.15.0",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@types/topojson-client": "^3.1.5",
     "@types/topojson-specification": "^1.0.5",
     "@vitejs/plugin-react": "^4.5.0",
+    "pngjs": "^7.0.0",
     "topojson-server": "^3.0.1",
     "topojson-simplify": "^3.0.3",
     "tsx": "^4.19.4",

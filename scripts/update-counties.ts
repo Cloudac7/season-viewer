@@ -3,7 +3,10 @@ import {fetchCountyBatch} from '../src/lib/county-weather';
 import {EMPTY_COUNTY_WEATHER,validCountyWeather,countyForecastIsFresh,countyHistoricalDays} from '../src/lib/counties';
 import type {CountyCatalog,CountyWeather} from '../src/lib/counties';
 import {beijingDate,addDays} from '../src/lib/season';
+import {acquireWeatherUpdateLock} from './weather-update-lock';
 const directory=new URL('../public/data/',import.meta.url),lock=new URL('../data-sources/county-update.lock',import.meta.url);
+const releaseSharedLock=await acquireWeatherUpdateLock('county');
+try{
 await mkdir(new URL('../data-sources/',import.meta.url),{recursive:true});
 try{
   const file=await open(lock,'wx');await file.writeFile(String(process.pid));await file.close();
@@ -27,7 +30,7 @@ try{
     let error:unknown;
     for(let attempt=0;attempt<3;attempt++){
       try{data=await fetchCountyBatch(batch,data,AbortSignal.timeout(45000));error=null;break;}
-      catch(e){error=e;if(attempt<2){console.log(`Retry batch after ${e instanceof Error?e.message:String(e)}`);await new Promise(resolve=>setTimeout(resolve,30000));}}
+      catch(e){error=e;if(e instanceof Error&&/HTTP 429\b/.test(e.message))throw e;if(attempt<2){console.log(`Retry batch after ${e instanceof Error?e.message:String(e)}`);await new Promise(resolve=>setTimeout(resolve,30000));}}
     }
     if(error)throw error;
     const target=new URL('county-weather.json',directory),temporary=new URL('county-weather.tmp.json',directory);
@@ -39,3 +42,4 @@ try{
   }
   console.log('County model snapshot complete');
 }finally{await unlink(lock).catch(()=>{});}
+}finally{await releaseSharedLock();}

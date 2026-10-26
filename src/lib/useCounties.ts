@@ -6,6 +6,7 @@ import type {CountyBoundaries,CountyCatalog,CountyReading,CountyWeather} from '.
 import {addDays,beijingDate} from './season';
 
 export function useCounties(date:string){
+  const today=beijingDate();
   const [catalog,setCatalog]=useState<CountyCatalog|null>(null),[boundaries,setBoundaries]=useState<CountyBoundaries|null>(null);
   const [data,setData]=useState<CountyWeather>(EMPTY_COUNTY_WEATHER),[loading,setLoading]=useState(true),[error,setError]=useState('');
   const [hasUpdater,setHasUpdater]=useState(false);
@@ -42,7 +43,7 @@ export function useCounties(date:string){
     }).catch(e=>{if(!controller.signal.aborted){setLoading(false);setError(e instanceof Error?e.message:'县界加载失败');}});
     return()=>{controller.abort();request.current?.abort('unmount');};
   },[refresh]);
-  const readings=useMemo<CountyReading[]>(()=>catalog?.units.map(unit=>classifyCounty(unit,data.records[unit.id],date))??[],[catalog,data,date]);
+  const readings=useMemo<CountyReading[]>(()=>catalog?.units.map(unit=>classifyCounty(unit,data.records[unit.id],date))??[],[catalog,data,date,today]);
   const ready=useMemo(()=>readings.filter(reading=>reading.state!==null),[readings]);
   const summaries=useMemo(()=>summarizePrefectures(readings),[readings]);
   const latest=addDays(beijingDate(),-1);
