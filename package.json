@@ -13,7 +13,12 @@
     "data:counties:import": "node --import tsx scripts/import-counties.ts",
     "data:grid:import": "node --import tsx scripts/import-weather-grid.ts",
     "data:grid:update": "node --import tsx scripts/update-weather-grid.ts",
-    "data:terrain:import": "node --import tsx scripts/import-terrain.ts"
+    "data:terrain:import": "node --import tsx scripts/import-terrain.ts",
+    "data:precompute": "node --import tsx scripts/precompute-spatial.ts",
+    "data:refresh": "node --import tsx scripts/refresh-precomputed.ts",
+    "prebuild": "npm run data:precompute",
+    "predev": "npm run data:precompute",
+    "postbuild": "node --import tsx scripts/prune-publication.ts"
   },
   "dependencies": {
     "d3-geo": "^3.1.1",
@@ -23,6 +28,7 @@
     "topojson-client": "^3.1.0"
   },
   "devDependencies": {
+    "@types/d3-contour": "^3.0.6",
     "@types/d3-geo": "^3.1.0",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^22.15.0",
@@ -32,6 +38,7 @@
     "@types/topojson-client": "^3.1.5",
     "@types/topojson-specification": "^1.0.5",
     "@vitejs/plugin-react": "^4.5.0",
+    "d3-contour": "^4.0.2",
     "pngjs": "^7.0.0",
     "topojson-server": "^3.0.1",
     "topojson-simplify": "^3.0.3",

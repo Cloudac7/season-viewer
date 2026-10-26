@@ -8,13 +8,14 @@ import {SEASONS} from '../data';
 import {countyMapColor,countyTransitionStatus,countyTransitionAppearance,transitionColors} from '../lib/map-status';
 import type {SpatialFieldResult} from '../lib/spatial-field';
 import {SPATIAL_SEASONS} from '../lib/spatial-field';
-import {renderSpatialRaster} from '../lib/spatial-raster';
+import type {SpatialContours,SpatialContourLayer} from '../lib/spatial-contours';
+import type {GridLocation} from '../lib/grid-location';
 import {gcjToWgs,wgsToGcj} from '../lib/coordinates';
 import {addDays} from '../lib/season';
 
-interface Props{readings:CountyReading[];boundaries:CountyBoundaries|null;selected:string;focus:{id:string;revision:number}|null;onSelect:(id:string,locate?:boolean)=>void;filter:Season|'all';region:Region|'all';layer:'season'|'temperature';showTransitions:boolean;showPoints:boolean;showBoundaries:boolean;spatialField?:SpatialFieldResult|null;spatialMode?:boolean;onSpatialSelect?:(point:{lon:number;lat:number})=>void;spatialLoading?:boolean;spatialSelected?:{lon:number;lat:number}|null}
+interface Props{readings:CountyReading[];boundaries:CountyBoundaries|null;selected:string;focus:{id:string;revision:number}|null;onSelect:(id:string,locate?:boolean)=>void;filter:Season|'all';region:Region|'all';layer:'season'|'temperature';showTransitions:boolean;showPoints:boolean;showBoundaries:boolean;spatialField?:SpatialFieldResult|null;spatialLayers?:SpatialContours|null;spatialMode?:boolean;onSpatialSelect?:(point:{lon:number;lat:number})=>void;spatialLoading?:boolean;spatialSelected?:{lon:number;lat:number}|null;getSpatialLocation?:(lon:number,lat:number)=>GridLocation|null}
 interface MapHover{reading:CountyReading|null;x:number;y:number;point?:{lon:number;lat:number;index:number}}
-export default function CountyMap({readings,boundaries,selected,focus,onSelect,filter,region,layer,showTransitions,showPoints,showBoundaries=false,spatialField=null,spatialMode=false,onSpatialSelect,spatialLoading=false,spatialSelected=null}:Props){
+export default function CountyMap({readings,boundaries,selected,focus,onSelect,filter,region,layer,showTransitions,showPoints,showBoundaries=false,spatialField=null,spatialLayers=null,spatialMode=false,onSpatialSelect,spatialLoading=false,spatialSelected=null,getSpatialLocation}:Props){
   const [provinces,setProvinces]=useState<FeatureCollection|null>(null);
   const [view,setView]=useState({zoom:1,x:0,y:0}),[hover,setHover]=useState<MapHover|null>(null);
   const [width,setWidth]=useState(840);
@@ -28,7 +29,12 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
   const shapes=useMemo(()=>boundaries?.features.map(feature=>({id:feature.properties.id,d:path(feature)??'',bounds:path.bounds(feature)}))??[],[boundaries,path]);
   const shapeById=useMemo(()=>new Map(shapes.map(shape=>[shape.id,shape])),[shapes]);
   const landPath=useMemo(()=>provinces?.features.filter(feature=>feature.properties?.adcode!=='100000_JD').map(feature=>path(feature)??'').join(' ')??'',[provinces,path]);
-  const raster=useMemo(()=>spatialMode&&spatialField?renderSpatialRaster(spatialField,{projection,layer,showTransitions,filter,width:840,height:550,pixelRatio:2}):null,[spatialMode,spatialField,projection,layer,showTransitions,filter]);
+  const surfaceLayers=useMemo(()=>spatialLayers?.layers.filter(surface=>layer==='temperature'?surface.kind==='temperature':surface.kind==='season'||(surface.kind==='transition'&&showTransitions))??[],[spatialLayers,layer,showTransitions]);
+  const selectedSeasonPath=filter==='all'?'':spatialLayers?.layers.find(surface=>surface.kind==='season'&&surface.season===filter)?.path??'';
+  const renderSurface=(surface:SpatialContourLayer,underlay=false)=>{
+    const d=underlay?surface.underlayPath:surface.path;if(!d)return null;
+    return <path key={`${surface.key}${underlay?'-cover':''}`} d={d} fill={surface.fill} fillRule="evenodd" data-contour-class={surface.key} opacity={layer==='season'&&filter!=='all'&&surface.season!==filter ? .18 : 1}/>;
+  };
   useEffect(()=>{
     const controller=new AbortController();
     fetch('/data/china.json',{signal:controller.signal}).then(r=>r.json() as Promise<FeatureCollection>).then(data=>{
@@ -63,6 +69,8 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
     return {lon:Number((spatialField.bounds.west+col*spatialField.step).toFixed(6)),lat:Number((spatialField.bounds.south+row*spatialField.step).toFixed(6)),index:row*spatialField.cols+col};
   };
   const hoverPoint=spatialMode?hover?.point:null;
+  const hoverLocation=hoverPoint?getSpatialLocation?.(hoverPoint.lon,hoverPoint.lat):null;
+  const hoverTitle=hoverLocation?.title??(hover?.reading?[hover.reading.unit.province,hover.reading.unit.city,hover.reading.unit.name].filter((name,index,names)=>names.indexOf(name)===index).join(' · '):'行政区划资料未覆盖');
   const hoverSeason=hoverPoint&&spatialField?SPATIAL_SEASONS[spatialField.seasons[hoverPoint.index]]:null;
   const hoverTarget=hoverPoint&&spatialField?SPATIAL_SEASONS[spatialField.targets[hoverPoint.index]]:null;
   const hoverStatus=hoverPoint&&spatialField?spatialField.status[hoverPoint.index]:0;
@@ -83,10 +91,12 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
       }}
       onPointerUp={e=>{const drag=gesture.current;gesture.current=null;if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);if(!drag||drag.moved)return;if(spatialMode){const point=drag.land?spatialPoint(e.clientX,e.clientY):null;if(point)onSpatialSelect?.({lon:point.lon,lat:point.lat});}else if(drag.id)onSelect(drag.id);}}
       onPointerCancel={()=>{gesture.current=null;}}>
-      <defs><clipPath id={`${id}-sea`}><rect x="2" y="2" width="75" height="80"/></clipPath><clipPath id="county-spatial-land" clipPathUnits="userSpaceOnUse"><path d={landPath} fill="#fff" clipRule="nonzero"/></clipPath></defs>
+      <defs><clipPath id={`${id}-sea`}><rect x="2" y="2" width="75" height="80"/></clipPath><clipPath id={`${id}-spatial-land`} clipPathUnits="userSpaceOnUse"><path d={landPath} fill="#fff" clipRule="nonzero"/></clipPath><clipPath id={`${id}-spatial-valid`} clipPathUnits="userSpaceOnUse"><path d={spatialLayers?.validPath??''} clipRule="evenodd"/></clipPath><clipPath id={`${id}-spatial-season`} clipPathUnits="userSpaceOnUse"><path d={selectedSeasonPath} clipRule="evenodd"/></clipPath></defs>
       <g className="county-map-transform" transform={`translate(${420+view.x} ${275+view.y}) scale(${view.zoom}) translate(-420 -275)`}>
         {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="#e0e6e2" stroke="#667786" strokeOpacity={.4} strokeWidth={.5/view.zoom} data-spatial-land={spatialMode&&feature.properties?.adcode!=='100000_JD'?'true':undefined} pointerEvents={spatialMode&&feature.properties?.adcode!=='100000_JD'?'all':'none'}/>)}
-        {spatialMode&&raster&&<g clipPath="url(#county-spatial-land)" pointerEvents="none"><image className="spatial-field-raster" href={raster.url} xlinkHref={raster.url} x={raster.x} y={raster.y} width={raster.width} height={raster.height} preserveAspectRatio="none" style={{imageRendering:'pixelated'}}/></g>}
+        {spatialMode&&spatialLayers&&<g className="spatial-field-contours" data-rendering="precomputed-contours" clipPath={`url(#${id}-spatial-land)`} pointerEvents="none"><g clipPath={`url(#${id}-spatial-valid)`}>
+          {layer==='season'?<>{surfaceLayers.filter(surface=>surface.kind==='season').map(surface=>renderSurface(surface,true))}{surfaceLayers.filter(surface=>surface.kind==='season').map(surface=>renderSurface(surface))}{surfaceLayers.filter(surface=>surface.kind==='transition').map(surface=>renderSurface(surface,true))}{surfaceLayers.filter(surface=>surface.kind==='transition').map(surface=>renderSurface(surface))}</>:<><g opacity={filter==='all'?1:.18}>{surfaceLayers.map(surface=>renderSurface(surface))}</g>{filter!=='all'&&<g clipPath={`url(#${id}-spatial-season)`}>{surfaceLayers.map(surface=>renderSurface(surface))}</g>}</>}
+        </g></g>}
         {spatialMode&&region!=='all'&&provinces?.features.filter(feature=>provinceRegions.has(Number(feature.properties?.adcode))&&provinceRegions.get(Number(feature.properties?.adcode))!==region).map((feature,i)=><path key={`region-mask-${i}`} d={path(feature)??''} fill="#f7fafd" opacity={.8} pointerEvents="none"/>)}
         {visible.map(shape=>{
           const reading=indexed.get(shape.id);if(!reading)return null;
@@ -109,10 +119,10 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
       <g transform="translate(36,455)" className="compass"><path d="M0 34V0m-5 8L0 0l5 8"/><text x="0" y="-9">N</text></g>
       <g transform="translate(728,424)"><rect width="79" height="102" rx="3" fill="#f8faf8" stroke="#dce4de"/><g clipPath={`url(#${id}-sea)`}>{provinces?.features.filter(f=>f.properties?.adcode===460000||f.properties?.adcode==='100000_JD').map((f,i)=><path key={i} d={seaPath(f)??''} fill="#d5dfd3" stroke="#667786" strokeOpacity={.4} strokeWidth=".5"/>)}{!spatialMode&&boundaries.features.filter(f=>f.properties.id==='460300').map(f=>{const reading=indexed.get('460300'),fill=reading?countyMapColor(reading,layer,showTransitions):'#e0e6e2';return <path key="sansha-counties" d={seaPath(f)??''} fill={fill} stroke={showBoundaries?'rgba(248,250,245,.62)':fill} strokeWidth={showBoundaries ? .4 : .35} pointerEvents="none"/>;})}</g><text x="39.5" y="92" className="inset-label">南海诸岛</text></g>
     </svg>
-    <div className="field-map-caption"><i/>{view.zoom.toFixed(1)}× · {spatialMode?'DEM 地形订正 · 逐格计算':'真实县界 · 代表点参考季节'}</div>
-    {spatialMode&&spatialLoading&&<div className="spatial-map-loading" role="status"><LoaderCircle size={14} className="spin"/>正在计算地形订正气温场…</div>}
+    <div className="field-map-caption"><i/>{view.zoom.toFixed(1)}× · {spatialMode?'DEM 地形订正 · 平滑矢量面':'真实县界 · 代表点参考季节'}</div>
+    {spatialMode&&spatialLoading&&<div className="spatial-map-loading" role="status"><LoaderCircle size={14} className="spin"/>正在载入预计算气温场…</div>}
     <div className="map-controls field-map-controls"><button onClick={()=>changeZoom(1.4)} aria-label="放大县级地图"><Plus size={17}/></button><button onClick={()=>changeZoom(1/1.4)} aria-label="缩小县级地图"><Minus size={17}/></button><span/><button onClick={()=>setView({zoom:1,x:0,y:0})} aria-label="重置县级地图"><LocateFixed size={17}/></button></div>
-    {hover&&spatialMode&&hoverPoint&&spatialField&&<div className="map-tooltip county-tooltip spatial-tooltip" style={{left:Math.min(hover.x+15,window.innerWidth-245),top:Math.min(hover.y+15,window.innerHeight-170)}}><div><strong>{hover.reading?.unit.name??'地形订正格点'}</strong><span>{hoverSeason?SEASONS[hoverSeason].name:'数据不足'}</span></div><small>{hoverPoint.lon.toFixed(1)}°E · {hoverPoint.lat.toFixed(1)}°N · WGS84</small><p>格点 5 日均温 <b>{Number.isFinite(spatialField.average[hoverPoint.index])?spatialField.average[hoverPoint.index].toFixed(1):'—'}°C</b></p><small style={{color:hoverAppearance?.color}}>{hoverTarget&&hoverStatus===2?`预计 ${addDays(spatialField.date,spatialField.expectedDays[hoverPoint.index]).slice(5).replace('-','/')} 完成${SEASONS[hoverTarget].verb} · 尚待完整日确认`:hoverTarget&&hoverStatus===1?`${SEASONS[hoverTarget].verb}进行中 · ${spatialField.transitionDays[hoverPoint.index]}/5 天`:'点击查看当地格点日温与地形订正'}</small><footer>模型气温与 DEM 推算 · 非地面实况</footer></div>}
+    {hover&&spatialMode&&hoverPoint&&spatialField&&<div className="map-tooltip county-tooltip spatial-tooltip" style={{left:Math.min(hover.x+15,window.innerWidth-245),top:Math.min(hover.y+15,window.innerHeight-170)}}><div><strong>{hoverTitle}</strong><span>{hoverSeason?SEASONS[hoverSeason].name:'数据不足'}</span></div><small>{hoverPoint.lon.toFixed(1)}°E · {hoverPoint.lat.toFixed(1)}°N · WGS84</small><p>格点 5 日均温 <b>{Number.isFinite(spatialField.average[hoverPoint.index])?spatialField.average[hoverPoint.index].toFixed(1):'—'}°C</b></p><small style={{color:layer==='season'?hoverAppearance?.color:undefined}}>{layer==='season'&&hoverTarget&&hoverStatus===2?`预计 ${addDays(spatialField.date,spatialField.expectedDays[hoverPoint.index]).slice(5).replace('-','/')} 完成${SEASONS[hoverTarget].verb} · 尚待完整日确认`:layer==='season'&&hoverTarget&&hoverStatus===1?`${SEASONS[hoverTarget].verb}进行中 · ${spatialField.transitionDays[hoverPoint.index]}/5 天`:'点击查看当地格点日温与地形订正'}</small><footer>模型气温与 DEM 推算 · 非地面实况</footer></div>}
     {hover&&!spatialMode&&hover.reading&&<div className="map-tooltip county-tooltip" style={{left:Math.min(hover.x+15,window.innerWidth-245),top:Math.min(hover.y+15,window.innerHeight-170)}}><div><strong>{hover.reading.unit.name}</strong><span>{hover.reading.state?SEASONS[hover.reading.state.season].name:'数据不足'}</span></div><small>{hover.reading.unit.province} · {hover.reading.unit.city} · {hover.reading.unit.id}</small><p>代表点 5 日均温 <b>{hover.reading.state?.average?.toFixed(1)??'—'}°C</b></p><small className={hover.reading.forecastTransition?'forecast-tooltip':''} style={{color:countyTransitionAppearance(hover.reading)?.color}}>{hover.reading.forecastTransition?`预计 ${hover.reading.forecastTransition.expectedDate.slice(5).replace('-','/')} 完成${SEASONS[hover.reading.forecastTransition.target].verb} · 尚待完整日确认`:hover.reading.state?.transition?`${SEASONS[hover.reading.state.transition.target].verb}进行中 · ${hover.reading.state.transition.days}/5 天`:'点击查看县区详情与日温曲线'}</small><footer>Open-Meteo 模型 · 非全县实测或全县均温</footer></div>}
   </div>;
 }

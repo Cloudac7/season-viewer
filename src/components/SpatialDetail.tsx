@@ -3,13 +3,14 @@ import type { CSSProperties } from 'react';
 import { SEASONS } from '../data';
 import { forecastIsFresh } from '../lib/forecast';
 import { transitionAppearance } from '../lib/map-status';
+import type { GridLocation } from '../lib/grid-location';
 import type { SpatialCell } from '../lib/spatial-field';
 import SeasonIcon from './SeasonIcon';
 import TemperatureChart from './TemperatureChart';
 
-export interface SpatialDetailProps { cell: SpatialCell | null; date: string; loading: boolean }
+export interface SpatialDetailProps { cell: SpatialCell | null; date: string; loading: boolean; location?: GridLocation | null }
 
-export default function SpatialDetail({ cell, date, loading }: SpatialDetailProps) {
+export default function SpatialDetail({ cell, date, loading, location }: SpatialDetailProps) {
   const state = cell?.state ?? null, season = state ? SEASONS[state.season] : null;
   const forecast = cell?.forecastTransition ?? null;
   const pendingAppearance = state ? transitionAppearance(state) : null;
@@ -20,8 +21,8 @@ export default function SpatialDetail({ cell, date, loading }: SpatialDetailProp
   } as CSSProperties);
   const chartInput = cell ? [...cell.days, ...(forecastIsFresh(cell.forecast) ? cell.forecast!.days : [])] : [];
   return <section className="panel city-card county-detail spatial-detail" aria-busy={loading}>
-    <div className="city-top"><div><span className="tiny-label">气温格点场 · OPEN-METEO + DEM</span><h3><Grid3X3 size={18}/>地形订正格点</h3><p className="county-breadcrumb">{cell ? `${cell.longitude.toFixed(2)}°E · ${cell.latitude.toFixed(2)}°N · WGS84` : '点击地图查看任意位置的季节与日温'}</p></div></div>
-    {loading && <p className="spatial-detail-loading" role="status"><LoaderCircle size={14}/>正在计算地形订正气温场…</p>}
+    <div className="city-top"><div><span className="tiny-label">气温格点场 · OPEN-METEO + DEM</span><h3><Grid3X3 size={18}/>{location?.title ?? (cell ? '行政区划资料未覆盖' : '选择地图位置')}</h3><p className="county-breadcrumb">{cell ? `${cell.longitude.toFixed(2)}°E · ${cell.latitude.toFixed(2)}°N · WGS84 · 格点估算${location?.kind === 'province' ? ' · 省级定位' : ''}` : '点击地图查看当地的季节与日温'}</p></div></div>
+    {loading && <p className="spatial-detail-loading" role="status"><LoaderCircle size={14}/>正在载入气温图…</p>}
     {cell && state && season ? <>
       <div className="city-season" style={{ background: season.pale, color: season.color }}><span className="city-season-symbol"><SeasonIcon season={state.season} size={42}/></span><div><small>格点参考季节</small><strong>{season.name}</strong></div><span className="city-season-note">{state.since ? <><b>{state.since.slice(5).replace('-', '月')}日</b>参考{season.verb}日</> : <>短序列初始估计<br/>待历史积累校正</>}</span></div>
       <div className="city-temperatures"><div><span>5 日滑动平均气温</span><strong>{state.average?.toFixed(1)}<small>°C</small></strong></div><div><span>当日日平均气温</span><strong>{state.temperature?.toFixed(1)}<small>°C</small></strong></div></div>

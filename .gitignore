@@ -11,3 +11,6 @@ dist
 data-sources/
 artifacts/
 public/data/*.tmp.json
+
+# Immutable map publications are recreated by prebuild/predev from tracked sources.
+public/data/precomputed/

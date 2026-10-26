@@ -1,5 +1,4 @@
-import { gridDevApi } from './scripts/grid-dev-api';
-import { countyDevApi } from './scripts/county-dev-api';
-import { defineConfig } from 'vite';
+import {precomputedDevApi} from './scripts/precomputed-dev-api';
+import {defineConfig} from 'vite';
 import react from '@vitejs/plugin-react';
-export default defineConfig({ plugins: [react(),countyDevApi(),gridDevApi()] });
+export default defineConfig({plugins:[react(),precomputedDevApi()]});
