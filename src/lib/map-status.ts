@@ -5,7 +5,7 @@ import type {ForecastTransition} from './forecast';
 import {sampleColor} from './field';
 
 export function transitionColors(from:Season,target:Season){
-  return TRANSITION_PALETTES[`${from}-${target}`]??{pending:SEASONS[from],forecast:SEASONS[target]};
+  return TRANSITION_PALETTES[`${from}-${target}`]??{pending:SEASONS[target],forecast:SEASONS[from]};
 }
 export function transitionAppearance(state:SeasonState,forecast?:ForecastTransition|null){
   const target=forecast?.target??state.transition?.target;

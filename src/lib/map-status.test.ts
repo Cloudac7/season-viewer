@@ -25,7 +25,7 @@ test('forecast completion takes color priority without changing the current seas
   assert.ok(!Object.values(SEASONS).some(season=>season.fill===TRANSITION_PALETTES['summer-autumn']!.pending.fill||season.fill===TRANSITION_PALETTES['summer-autumn']!.forecast.fill));
 });
 
-test('autumn to winter has deep red observation and purple forecast steps distinct from the summer to autumn path',()=>{
+test('autumn to winter uses the purple step for the observed process and deep red for forecast completion',()=>{
   const unit:CountyUnit={id:'test',name:'测试县',provinceCode:110000,province:'北京',cityCode:110100,city:'北京',region:'华北',kind:'county',display:[116,40],lon:116,lat:40,pointMethod:'测试'};
   const issuedAt='2026-10-11T00:00:00Z',now=new Date(issuedAt);
   const series:CountySeries={lon:116,lat:40,updatedAt:issuedAt,days:[15,15,15,15,15,5,5,5,5,5].map((mean,i)=>({date:addDays('2026-10-01',i),mean}))};
@@ -34,8 +34,8 @@ test('autumn to winter has deep red observation and purple forecast steps distin
   assert.equal(pending.state?.season,'autumn');
   assert.equal(pending.state?.transition?.target,'winter');
   assert.equal(forecast.forecastTransition?.target,'winter');
-  assert.equal(countyMapColor(pending,'season',true),'#b7354f');
-  assert.equal(countyMapColor(forecast,'season',true),'#8754b0');
+  assert.equal(countyMapColor(pending,'season',true),'#8754b0');
+  assert.equal(countyMapColor(forecast,'season',true),'#b7354f');
   assert.equal(countyMapColor(forecast,'season',false),SEASONS.autumn.fill);
   assert.notEqual(countyMapColor(forecast,'season',true),TRANSITION_PALETTES['summer-autumn']!.forecast.fill);
 });
