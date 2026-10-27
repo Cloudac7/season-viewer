@@ -17,7 +17,7 @@ export interface SpatialContourLayer {
   status?: 1 | 2;
   fill: string;
   path: string;
-  /** Categorical junctions retain their original class under the curved surface. */
+  /** Optional sampled-cell cover for exact categories at joins and valid-data edges. */
   underlayPath?: string;
   minimum?: number | null;
 }
@@ -28,6 +28,14 @@ export interface SpatialContours {
   validPath: string;
   layers: SpatialContourLayer[];
   note: string;
+}
+
+export function temperatureLayerPaintOrder(layers: readonly SpatialContourLayer[]): { surface: SpatialContourLayer; underlay: boolean }[] {
+  return [
+    ...layers.filter(surface => surface.minimum === null).map(surface => ({ surface, underlay: false })),
+    ...layers.filter(surface => surface.minimum !== null).map(surface => ({ surface, underlay: false })),
+    ...layers.filter(surface => surface.minimum !== null && surface.underlayPath).map(surface => ({ surface, underlay: true })),
+  ];
 }
 
 /** Shared with CountyMap. Assets are generated at deploy time, never in React. */
@@ -42,17 +50,12 @@ function rounded(value: number): string { return String(Math.round(value * 100) 
  * corner cut is 0.12 grid units; all data nodes are at least sqrt(1/8) away.
  * Reversing a shared boundary produces the same quadratic curve.
  */
-function ringPath(ring: Position[], project: (point: Point) => Point, smooth: boolean): string {
+function ringPath(ring: Position[], project: (point: Point) => Point, smooth: boolean, roundCoordinates = true): string {
   let points = ring.slice(0, -1).map(point => [point[0], point[1]] as Point);
   if (points.length < 3) return '';
-  // Marching squares emits intermediate collinear vertices. Removing only
-  // these vertices reduces asset size without changing any boundary.
-  points = points.filter((point, index, all) => {
-    const previous = all[(index + all.length - 1) % all.length], next = all[(index + 1) % all.length];
-    return Math.abs((point[0] - previous[0]) * (next[1] - point[1]) - (point[1] - previous[1]) * (next[0] - point[0])) > 1e-9;
-  });
-  if (points.length < 3) return '';
-  const coordinate = (point: Point) => project(point).map(rounded).join(' ');
+  // Preserve the marching-squares vertices. Even apparently collinear points
+  // can be topology junctions in self-touching rings around missing data.
+  const coordinate = (point: Point) => project(point).map(value => roundCoordinates ? rounded(value) : String(value)).join(' ');
   if (!smooth) return `M${points.map(coordinate).join('L')}Z`;
   const cuts = points.map((point, index, all) => {
     const previous = all[(index + all.length - 1) % all.length], next = all[(index + 1) % all.length];
@@ -66,8 +69,8 @@ function ringPath(ring: Position[], project: (point: Point) => Point, smooth: bo
   return `M${coordinate(cuts[0].incoming)}${cuts.map((cut, index) => `${index ? `L${coordinate(cut.incoming)}` : ''}Q${coordinate(cut.point)} ${coordinate(cut.outgoing)}`).join('')}Z`;
 }
 
-function geometryPath(geometry: MultiPolygon, project: (point: Point) => Point, smooth = true): string {
-  return geometry.coordinates.map(polygon => polygon.map(ring => ringPath(ring, project, smooth)).join('')).join('');
+function geometryPath(geometry: MultiPolygon, project: (point: Point) => Point, smooth = true, roundCoordinates = true): string {
+  return geometry.coordinates.map(polygon => polygon.map(ring => ringPath(ring, project, smooth, roundCoordinates)).join('')).join('');
 }
 
 /** Retain a categorical cover at three/four-class junctions; never fill a hole. */
@@ -100,6 +103,15 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
   const contour = contours().size([cols, rows]).smooth(true);
   const valid = Uint8Array.from(field.seasons, (season, index) => Number(season >= 0 && season < SPATIAL_SEASONS.length && Number.isFinite(field.average[index])));
   const validPath = geometryPath(contour.thresholds([0.5])(Array.from(valid))[0], project, false);
+  // Isotherm rings can terminate at the edge of their finite grid. A one-cell
+  // fallback along valid-data edges preserves exact sampled colors and is
+  // painted above the interpolated contours.
+  const edge = Uint8Array.from(valid, (present, index) => {
+    if (!present) return 0;
+    const row = Math.floor(index / cols), col = index % cols;
+    return Number(row === 0 || row === rows - 1 || col === 0 || col === cols - 1 ||
+      !valid[index - 1] || !valid[index + 1] || !valid[index - cols] || !valid[index + cols]);
+  });
   const layers: SpatialContourLayer[] = [];
   const addMask = (layer: Omit<SpatialContourLayer, 'path' | 'underlayPath'>, predicate: (index: number) => boolean) => {
     const mask = Uint8Array.from(valid, (present, index) => Number(!!present && predicate(index)));
@@ -122,11 +134,14 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
     const thresholds = TEMPERATURE_BANDS.flatMap(band => band.min === null ? [] : [band.min]);
     const surfaces = contour.thresholds(thresholds)(temperatures);
     surfaces.forEach((surface, index) => {
-      if (!surface.coordinates.length) return;
+      const threshold = thresholds[index];
+      const edgeMask = Uint8Array.from(edge, (isEdge, cell) => Number(!!isEdge && field.average[cell] >= threshold));
+      const underlayPath = rowRunsPath(edgeMask, rows, cols, project);
+      if (!surface.coordinates.length && !underlayPath) return;
       // True continuous threshold interpolation already removes pixel steps.
       // Do not round these vertices: an isotherm can lie arbitrarily close to
       // a node whose value is just above/below a band boundary.
-      layers.push({ key: `temperature:${thresholds[index]}`, kind: 'temperature', minimum: thresholds[index], fill: TEMPERATURE_BANDS[index + 1].fill, path: geometryPath(surface, project, false) });
+      layers.push({ key: `temperature:${threshold}`, kind: 'temperature', minimum: threshold, fill: TEMPERATURE_BANDS[index + 1].fill, path: surface.coordinates.length ? geometryPath(surface, project, false, false) : '', ...(underlayPath ? { underlayPath } : {}) });
     });
   }
   return { version: 1, projection: SPATIAL_CONTOUR_PROJECTION, validPath, layers,

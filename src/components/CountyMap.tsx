@@ -8,6 +8,7 @@ import {SEASONS} from '../data';
 import {countyMapColor,countyTransitionStatus,countyTransitionAppearance,transitionColors} from '../lib/map-status';
 import type {SpatialFieldResult} from '../lib/spatial-field';
 import {SPATIAL_SEASONS} from '../lib/spatial-field';
+import {temperatureLayerPaintOrder} from '../lib/spatial-contours';
 import type {SpatialContours,SpatialContourLayer} from '../lib/spatial-contours';
 import type {GridLocation} from '../lib/grid-location';
 import {gcjToWgs,wgsToGcj} from '../lib/coordinates';
@@ -35,6 +36,7 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
     const d=underlay?surface.underlayPath:surface.path;if(!d)return null;
     return <path key={`${surface.key}${underlay?'-cover':''}`} d={d} fill={surface.fill} fillRule="evenodd" data-contour-class={surface.key} opacity={layer==='season'&&filter!=='all'&&surface.season!==filter ? .18 : 1}/>;
   };
+  const renderTemperatureLayers=()=> <>{temperatureLayerPaintOrder(surfaceLayers).map(({surface,underlay})=>renderSurface(surface,underlay))}</>;
   useEffect(()=>{
     const controller=new AbortController();
     fetch('/data/china.json',{signal:controller.signal}).then(r=>r.json() as Promise<FeatureCollection>).then(data=>{
@@ -95,7 +97,7 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
       <g className="county-map-transform" transform={`translate(${420+view.x} ${275+view.y}) scale(${view.zoom}) translate(-420 -275)`}>
         {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="#e0e6e2" stroke="#667786" strokeOpacity={.4} strokeWidth={.5/view.zoom} data-spatial-land={spatialMode&&feature.properties?.adcode!=='100000_JD'?'true':undefined} pointerEvents={spatialMode&&feature.properties?.adcode!=='100000_JD'?'all':'none'}/>)}
         {spatialMode&&spatialLayers&&<g className="spatial-field-contours" data-rendering="precomputed-contours" clipPath={`url(#${id}-spatial-land)`} pointerEvents="none"><g clipPath={`url(#${id}-spatial-valid)`}>
-          {layer==='season'?<>{surfaceLayers.filter(surface=>surface.kind==='season').map(surface=>renderSurface(surface,true))}{surfaceLayers.filter(surface=>surface.kind==='season').map(surface=>renderSurface(surface))}{surfaceLayers.filter(surface=>surface.kind==='transition').map(surface=>renderSurface(surface,true))}{surfaceLayers.filter(surface=>surface.kind==='transition').map(surface=>renderSurface(surface))}</>:<><g opacity={filter==='all'?1:.18}>{surfaceLayers.map(surface=>renderSurface(surface))}</g>{filter!=='all'&&<g clipPath={`url(#${id}-spatial-season)`}>{surfaceLayers.map(surface=>renderSurface(surface))}</g>}</>}
+          {layer==='season'?<>{surfaceLayers.filter(surface=>surface.kind==='season').map(surface=>renderSurface(surface,true))}{surfaceLayers.filter(surface=>surface.kind==='season').map(surface=>renderSurface(surface))}{surfaceLayers.filter(surface=>surface.kind==='transition').map(surface=>renderSurface(surface,true))}{surfaceLayers.filter(surface=>surface.kind==='transition').map(surface=>renderSurface(surface))}</>:<><g opacity={filter==='all'?1:.18}>{renderTemperatureLayers()}</g>{filter!=='all'&&<g clipPath={`url(#${id}-spatial-season)`}>{renderTemperatureLayers()}</g>}</>}
         </g></g>}
         {spatialMode&&region!=='all'&&provinces?.features.filter(feature=>provinceRegions.has(Number(feature.properties?.adcode))&&provinceRegions.get(Number(feature.properties?.adcode))!==region).map((feature,i)=><path key={`region-mask-${i}`} d={path(feature)??''} fill="#f7fafd" opacity={.8} pointerEvents="none"/>)}
         {visible.map(shape=>{

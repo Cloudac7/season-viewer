@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { geoMercator } from 'd3-geo';
-import { generateSpatialContours } from './spatial-contours';
+import { generateSpatialContours, temperatureLayerPaintOrder } from './spatial-contours';
 import { wgsToGcj } from './coordinates';
 import { SPATIAL_SEASONS } from './spatial-field';
 import type { SpatialFieldResult } from './spatial-field';
@@ -72,11 +72,43 @@ test('continuous temperature isotherms preserve fixed-band sample colors without
   field.status[2] = 2; field.targets[2] = 3;
   const layers = generateSpatialContours(field).layers.filter(layer => layer.kind === 'temperature');
   field.average.forEach((average, index) => {
-    let fill: string | undefined;
-    layers.forEach(layer => { if (contains(layer.path, pointAt(field, index))) fill = layer.fill; });
-    assert.equal(fill, temperatureColor(average), `temperature ${average}`);
+    const point = pointAt(field, index);
+    let fill = layers.find(layer => layer.minimum === null)!.fill;
+    temperatureLayerPaintOrder(layers).forEach(({ surface, underlay }) => {
+      const path = underlay ? surface.underlayPath ?? '' : surface.path;
+      if (contains(path, point)) fill = surface.fill;
+    });
+    assert.equal(fill, temperatureColor(average), `temperature ${average} at sample ${index}`);
   });
   assert.ok(layers.every(layer => !layer.season && !layer.target && !layer.status));
+});
+
+test('temperature isotherms retain samples only slightly above a band boundary', () => {
+  const field = fixture();
+  field.average.fill(4.9);
+  field.average[12] = 5.0001;
+  const layer = generateSpatialContours(field).layers.find(surface => surface.key === 'temperature:5');
+  assert.ok(layer);
+  assert.equal(contains(layer.path, pointAt(field, 12)), true);
+});
+
+test('temperature edge fallback covers valid cells beside missing-data gaps', () => {
+  const field = fixture();
+  field.seasons[12] = -1; field.average[12] = Number.NaN;
+  const layers = generateSpatialContours(field).layers.filter(layer => layer.kind === 'temperature');
+  const temperatureLayers = layers.filter(layer => layer.minimum !== null);
+  for (const index of [7, 11, 13, 17]) {
+    const point = pointAt(field, index), average = field.average[index];
+    for (const layer of temperatureLayers) {
+      assert.equal(contains(layer.underlayPath ?? '', point), average >= layer.minimum!, `fallback ${layer.key} at sample ${index}`);
+    }
+    let fill = layers.find(layer => layer.minimum === null)!.fill;
+    temperatureLayerPaintOrder(layers).forEach(({ surface, underlay }) => {
+      const path = underlay ? surface.underlayPath ?? '' : surface.path;
+      if (contains(path, point)) fill = surface.fill;
+    });
+    assert.equal(fill, temperatureColor(average), `edge temperature ${average} at sample ${index}`);
+  }
 });
 
 test('pending and forecast masks stay distinct, while a wholly missing frame has no fills', () => {
