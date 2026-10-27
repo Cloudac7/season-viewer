@@ -1,0 +1,78 @@
+name: Refresh and deploy weather
+
+on:
+  schedule:
+    # GitHub Actions schedules use UTC. 01:00 UTC is 09:00 in Beijing.
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-weather-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Check deployment credentials
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo '::error::Configure the CLOUDFLARE_API_TOKEN repository secret before running this workflow.'
+            exit 1
+          fi
+      - run: npm ci
+      - name: Restore weather checkpoints
+        id: weather-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            public/data/county-weather.json
+            public/data/weather-grid-weather.json
+            data-sources/weather-grid-usage.json
+            data-sources/weather-grid-backoff.json
+          key: weather-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: weather-v1-
+      - name: Seed from the current production snapshot
+        if: steps.weather-cache.outputs.cache-matched-key == ''
+        run: node --import tsx scripts/seed-production-weather.ts
+      - name: Download and precompute weather
+        id: refresh
+        continue-on-error: true
+        run: npm run data:refresh
+      - name: Save weather checkpoints
+        if: ${{ !cancelled() && steps.refresh.outcome != 'skipped' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            public/data/county-weather.json
+            public/data/weather-grid-weather.json
+            data-sources/weather-grid-usage.json
+            data-sources/weather-grid-backoff.json
+          key: weather-v1-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Stop after a failed refresh
+        if: steps.refresh.outcome != 'success'
+        run: |
+          echo '::error::Weather refresh failed; the last checkpoint was saved and production was not changed.'
+          exit 1
+      - name: Build and deploy to Cloudflare
+        env:
+          CLOUDFLARE_ACCOUNT_ID: 33770003f957403d60ec0e54b707fb88
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy:cloudflare
+      - name: Verify the published snapshot
+        run: |
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors \
+            https://season.tomori.xyz/data/precomputed/manifest.json -o "$RUNNER_TEMP/live-manifest.json"
+          node -e 'const fs = require("fs"); const expected = JSON.parse(fs.readFileSync("dist/data/precomputed/manifest.json")); const live = JSON.parse(fs.readFileSync(process.argv[1])); if (expected.revision !== live.revision) throw new Error(`Expected ${expected.revision}, received ${live.revision}`); console.log(`Published revision: ${live.revision}`)' "$RUNNER_TEMP/live-manifest.json"

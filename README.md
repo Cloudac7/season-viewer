@@ -27,6 +27,12 @@ npm run data:terrain:import    # 导入公开 Terrarium DEM（需联网，原始
 
 Cloudflare 部署使用 Wrangler 与 Workers Static Assets。首次使用前执行 `npx wrangler login` 完成 Cloudflare OAuth；`npm run deploy:cloudflare` 会重新构建（包含每日快照预计算），再将 `dist/` 部署到配置的 `season.tomori.xyz` 自定义域。Cloudflare 账号须包含并启用 `tomori.xyz` zone，且该子域尚未绑定其他 CNAME/服务；Wrangler 会为 Workers 自定义域建立 DNS 记录并申请证书。后续每次天气资料刷新后重新运行此命令即可发布新快照。
 
+## 每日自动更新
+
+GitHub Actions 工作流 `.github/workflows/daily-weather.yml` 每天北京时间 09:00（UTC 01:00）计划运行，也可在 GitHub Actions 中手动触发。GitHub 的计划任务可能排队延迟。工作流从线上快照或上次运行的缓存恢复县级和格点历史、配额及限流状态，下载最新资料，完成预计算后部署并校验线上版本。失败的下载会保存已完成的断点并停止部署；可在 Actions 页面查看错误并手动重试。缓存被清理后，工作流会从当前线上快照重新接续。
+
+启用前，在仓库 Settings → Secrets and variables → Actions 添加 `CLOUDFLARE_API_TOKEN`。可在 Cloudflare 创建限制到本项目账号和域名的 Workers 部署令牌，使用 **Edit Cloudflare Workers** 模板；令牌值只保存在 GitHub Secret，不要提交到仓库。工作流使用已配置的 Cloudflare 账号 ID。操作完成后在 Actions 中运行一次 **Refresh and deploy weather**，确认抓取和部署成功。
+
 ## 计算前移与缓存
 
 此前页面打开时在 Worker 中重算约 22.8 万个显示格点；现在全国分类、县级统计、地级汇总和地图轮廓都在部署/构建时生成。
