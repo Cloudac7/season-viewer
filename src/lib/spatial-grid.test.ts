@@ -4,6 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {EMPTY_GRID_WEATHER,fetchGridBatch,gridBatchApiCost,gridBatchPastDays,gridHistoricalDays,validGridCatalog,validGridWeather} from './spatial-grid';
 import type {WeatherGrid,WeatherGridCatalog,WeatherGridNode} from './spatial-grid';
 import {addDays,beijingDate} from './season';
+import {OpenMeteoHttpError} from './open-meteo';
 
 const node:WeatherGridNode={id:'r0c0',row:0,col:0,lon:85,lat:32};
 const catalog:WeatherGridCatalog={version:1,id:'test-grid',crs:'WGS84',step:.5,origin:[85,32],rows:2,cols:2,nodes:[node],source:{name:'test',url:'https://open-meteo.com/en/docs',retrievedAt:new Date().toISOString(),boundarySha256:'test',note:'test'}};
@@ -29,12 +30,13 @@ test('independent WGS84 grid is regular and includes western interior sampling',
 test('grid bootstrap stores real elevation and separates incomplete and forecast days',async()=>{
   const original=globalThis.fetch;
   try{
-    globalThis.fetch=async input=>{
-      const url=new URL(String(input));
-      assert.equal(url.searchParams.get('past_days'),'14');
-      assert.equal(url.searchParams.get('forecast_days'),'7');
-      assert.equal(url.searchParams.get('cell_selection'),'land');
-      assert.equal(url.searchParams.has('elevation'),false);
+    globalThis.fetch=async (input,init)=>{
+      assert.equal(String(input),'https://api.open-meteo.com/v1/forecast');assert.equal(init?.method,'POST');
+      const params=new URLSearchParams(String(init?.body));
+      assert.equal(params.get('past_days'),'14');
+      assert.equal(params.get('forecast_days'),'7');
+      assert.equal(params.get('cell_selection'),'land');
+      assert.equal(params.has('elevation'),false);
       return new Response(JSON.stringify(apiResult()),{status:200});
     };
     const data=await fetchGridBatch([node],empty(),new AbortController().signal);
@@ -61,8 +63,8 @@ test('incremental grid update retains historical coverage and requests two past 
   try{
     globalThis.fetch=async()=>new Response(JSON.stringify(apiResult()),{status:200});
     const initial=await fetchGridBatch([node],empty(),new AbortController().signal);
-    globalThis.fetch=async input=>{
-      assert.equal(new URL(String(input)).searchParams.get('past_days'),'2');
+    globalThis.fetch=async (_input,init)=>{
+      assert.equal(new URLSearchParams(String(init?.body)).get('past_days'),'2');
       return new Response(JSON.stringify(apiResult(2)),{status:200});
     };
     const updated=await fetchGridBatch([node],initial,new AbortController().signal);
@@ -71,6 +73,13 @@ test('incremental grid update retains historical coverage and requests two past 
     const stale=structuredClone(initial);
     stale.records[node.id].days=stale.records[node.id].days.slice(0,-4);
     assert.equal(gridBatchPastDays([node],stale),14);
+  }finally{globalThis.fetch=original;}
+});
+test('grid HTTP errors retain server retry guidance',async()=>{
+  const original=globalThis.fetch;
+  try{
+    globalThis.fetch=async()=>new Response('',{status:429,headers:{'Retry-After':'Wed, 28 Oct 2026 09:00:00 GMT'}});
+    await assert.rejects(fetchGridBatch([node],empty(),new AbortController().signal),(error:unknown)=>error instanceof OpenMeteoHttpError&&error.status===429&&error.retryAfter==='Wed, 28 Oct 2026 09:00:00 GMT');
   }finally{globalThis.fetch=original;}
 });
 

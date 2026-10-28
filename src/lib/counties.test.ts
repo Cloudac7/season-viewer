@@ -6,7 +6,8 @@ import {feature} from 'topojson-client';
 import type {Topology,GeometryCollection} from 'topojson-specification';
 import {classifyCounty,countyForecastIsFresh,countyHistoricalDays,EMPTY_COUNTY_WEATHER,mergeCountyWeather,summarizePrefectures,validCountyWeather} from './counties';
 import type {CountyCatalog,CountyBoundaries,CountySeries,CountyWeather} from './counties';
-import {fetchCountyBatch} from './county-weather';
+import {countyBatchApiCost,countyBatchPastDays,fetchCountyBatch} from './county-weather';
+import {OpenMeteoHttpError} from './open-meteo';
 import {gcjToWgs,wgsToGcj} from './coordinates';
 import {sampleColor} from './field';
 import {addDays,beijingDate} from './season';
@@ -102,10 +103,11 @@ test('county seasons use the exact four legend colors rather than interpolated m
 });
 test('initial model fetch batches representative coordinates with an explicit Beijing daily boundary',async t=>{
   let requested='';const today=beijingDate();
-  t.mock.method(globalThis,'fetch',async(url:string)=>{requested=url;return new Response(JSON.stringify({latitude:unit.lat,longitude:unit.lon,daily:{time:Array.from({length:21},(_,i)=>addDays(today,i-14)),temperature_2m_mean:Array(21).fill(15)}}));});
+  t.mock.method(globalThis,'fetch',async(url:string,init:RequestInit)=>{assert.equal(url,'https://api.open-meteo.com/v1/forecast');assert.equal(init.method,'POST');requested=String(init.body);return new Response(JSON.stringify({latitude:unit.lat,longitude:unit.lon,daily:{time:Array.from({length:21},(_,i)=>addDays(today,i-14)),temperature_2m_mean:Array(21).fill(15)}}));});
   const result=await fetchCountyBatch([unit],EMPTY_COUNTY_WEATHER,new AbortController().signal);
-  const params=new URL(requested).searchParams;
+  const params=new URLSearchParams(requested);
   assert.equal(params.get('latitude'),String(unit.lat));assert.equal(params.get('longitude'),String(unit.lon));assert.equal(params.get('timezone'),'Asia/Shanghai');assert.equal(params.get('past_days'),'14');assert.equal(params.get('forecast_days'),'7');
+  assert.equal(countyBatchPastDays([unit],EMPTY_COUNTY_WEATHER,today),14);assert.equal(countyBatchApiCost([unit],EMPTY_COUNTY_WEATHER,today),1.5);
   assert.equal(classifyCounty(unit,result.records[unit.id],addDays(today,-1)).status,'ready');
   assert.equal(result.records[unit.id].days.at(-1)?.date,addDays(today,-1));
   assert.equal(result.records[unit.id].forecast?.days[0].date,today);assert.equal(result.records[unit.id].forecast?.days.length,7);
@@ -114,9 +116,9 @@ test('incremental fetch retains older history and rejects partial responses with
   const today=beijingDate(),previous=dataset(days(Array(30).fill(15),addDays(today,-30)));let requested='';
   previous.records[unit.id].updatedAt=new Date(`${addDays(today,-1)}T00:00:00Z`).toISOString();
   const saved=JSON.stringify(previous);
-  t.mock.method(globalThis,'fetch',async(url:string)=>{requested=url;return new Response(JSON.stringify({latitude:unit.lat,longitude:unit.lon,daily:{time:Array.from({length:9},(_,i)=>addDays(today,i-2)),temperature_2m_mean:Array(9).fill(16)}}));});
+  t.mock.method(globalThis,'fetch',async(_url:string,init:RequestInit)=>{requested=String(init.body);return new Response(JSON.stringify({latitude:unit.lat,longitude:unit.lon,daily:{time:Array.from({length:9},(_,i)=>addDays(today,i-2)),temperature_2m_mean:Array(9).fill(16)}}));});
   const updated=await fetchCountyBatch([unit],previous,new AbortController().signal);
-  assert.equal(new URL(requested).searchParams.get('past_days'),'2');assert.equal(updated.records[unit.id].days[0].date,addDays(today,-30));assert.equal(updated.records[unit.id].days.at(-1)?.mean,16);assert.equal(JSON.stringify(previous),saved);assert.equal(updated.records[unit.id].forecast?.days.length,7);
+  assert.equal(new URLSearchParams(requested).get('past_days'),'2');assert.equal(countyBatchPastDays([unit],previous,today),2);assert.equal(countyBatchApiCost([unit],previous,today),1);assert.equal(updated.records[unit.id].days[0].date,addDays(today,-30));assert.equal(updated.records[unit.id].days.at(-1)?.mean,16);assert.equal(JSON.stringify(previous),saved);assert.equal(updated.records[unit.id].forecast?.days.length,7);
   t.mock.method(globalThis,'fetch',async()=>new Response('[]'));
   await assert.rejects(fetchCountyBatch([unit],previous,new AbortController().signal),/覆盖不完整/);assert.equal(JSON.stringify(previous),saved);
   t.mock.method(globalThis,'fetch',async()=>new Response(JSON.stringify({latitude:unit.lat,longitude:unit.lon,daily:{time:['2026-02-30'],temperature_2m_mean:[15]}})));
@@ -126,9 +128,33 @@ test('refresh fills stale history from the API instead of promoting old forecast
   const today=beijingDate(),previous=dataset(days(Array(16).fill(15),addDays(today,-17)));let requested='';
   previous.records[unit.id].updatedAt=`${addDays(today,-4)}T00:00:00Z`;
   previous.records[unit.id].days.push({date:addDays(today,-1),mean:-30});
-  t.mock.method(globalThis,'fetch',async(url:string)=>{requested=url;return new Response(JSON.stringify({latitude:unit.lat,longitude:unit.lon,daily:{time:Array.from({length:21},(_,i)=>addDays(today,i-14)),temperature_2m_mean:Array(21).fill(16)}}));});
+  t.mock.method(globalThis,'fetch',async(_url:string,init:RequestInit)=>{requested=String(init.body);return new Response(JSON.stringify({latitude:unit.lat,longitude:unit.lon,daily:{time:Array.from({length:21},(_,i)=>addDays(today,i-14)),temperature_2m_mean:Array(21).fill(16)}}));});
   const result=await fetchCountyBatch([unit],previous,new AbortController().signal);
-  assert.equal(new URL(requested).searchParams.get('past_days'),'14');
+  assert.equal(new URLSearchParams(requested).get('past_days'),'14');
   assert.equal(result.records[unit.id].days.at(-1)?.mean,16);assert.ok(result.records[unit.id].days.every(day=>day.date<today));
   assert.equal(result.records[unit.id].forecast?.days.length,7);
+});
+test('county HTTP errors preserve status and Retry-After without changing the snapshot',async t=>{
+  const previous=structuredClone(EMPTY_COUNTY_WEATHER);
+  t.mock.method(globalThis,'fetch',async()=>new Response('',{status:429,headers:{'Retry-After':'120'}}));
+  await assert.rejects(fetchCountyBatch([unit],previous,new AbortController().signal),(error:unknown)=>error instanceof OpenMeteoHttpError&&error.status===429&&error.retryAfter==='120');
+  assert.deepEqual(previous,EMPTY_COUNTY_WEATHER);
+});
+test('county multi-point batches preserve response order and charge each requested location',async t=>{
+  const units=catalog.units.slice(0,2),today=beijingDate();
+  t.mock.method(globalThis,'fetch',async(_url:string,init:RequestInit)=>{
+    const params=new URLSearchParams(String(init.body));
+    assert.equal(params.get('latitude'),units.map(point=>point.lat).join(','));
+    assert.equal(params.get('longitude'),units.map(point=>point.lon).join(','));
+    const time=Array.from({length:21},(_,i)=>addDays(today,i-14));
+    return new Response(JSON.stringify(units.map((point,i)=>({latitude:point.lat,longitude:point.lon,daily:{time,temperature_2m_mean:Array(21).fill(10+i)}}))));
+  });
+  const result=await fetchCountyBatch(units,EMPTY_COUNTY_WEATHER,new AbortController().signal);
+  assert.equal(result.records[units[0].id].days.at(-1)?.mean,10);
+  assert.equal(result.records[units[1].id].days.at(-1)?.mean,11);
+  assert.equal(countyBatchApiCost(units,EMPTY_COUNTY_WEATHER,today),3);
+  assert.equal(countyBatchApiCost(units,result,today),2);
+  delete result.records[units[1].id];
+  assert.equal(countyBatchPastDays(units,result,today),14);
+  assert.equal(countyBatchApiCost(units,result,today),3);
 });

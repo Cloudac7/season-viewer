@@ -2,6 +2,7 @@ import type { DayTemperature } from '../types';
 import type { TemperatureForecast } from './forecast';
 import { forecastIsFresh } from './forecast';
 import { addDays, beijingDate } from './season';
+import {fetchOpenMeteo} from './open-meteo';
 
 /** Coordinates and sample spacing are WGS84, independent of county representatives. */
 export interface WeatherGridNode { id:string; row:number; col:number; lon:number; lat:number }
@@ -76,8 +77,7 @@ export async function fetchGridBatch(nodes:WeatherGridNode[],previous:WeatherGri
   const params=new URLSearchParams({latitude:nodes.map(node=>node.lat).join(','),longitude:nodes.map(node=>node.lon).join(','),daily:'temperature_2m_mean',timezone:'Asia/Shanghai',past_days:String(gridBatchPastDays(nodes,previous,requestToday)),forecast_days:'7',cell_selection:'land'});
   // Omit elevation: Open-Meteo uses the requested point's 90 m DEM elevation
   // for its existing statistical downscaling; do not apply a second lapse rate.
-  const response=await fetch(`https://api.open-meteo.com/v1/forecast?${params}`,{signal});
-  if(!response.ok)throw Object.assign(new Error(`Open-Meteo grid HTTP ${response.status}`),{status:response.status,retryAfter:response.headers.get('retry-after')});
+  const response=await fetchOpenMeteo(params,signal,'grid ');
   const body=await response.json();
   if(body.error)throw new Error(body.reason??'格点模型响应无效');
   const locations:ApiLocation[]=Array.isArray(body)?body:[body];

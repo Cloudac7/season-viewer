@@ -9,8 +9,10 @@ for(const script of ['scripts/update-counties.ts','scripts/update-weather-grid.t
   try{if(await run(script)!==0){failed=true;break;}}
   catch(error){console.error(error);failed=true;break;}
 }
-// Keep a usable published snapshot even if an upstream refresh is unavailable.
-// Baking with today's evaluation time also removes expired forecast overlays.
-try{if(await run('scripts/precompute-spatial.ts')!==0)failed=true;}
-catch(error){console.error(error);failed=true;}
+// Local development can still bake the previous snapshot after an upstream
+// failure. CI never deploys a failed refresh, so do not spend time baking it.
+if(!failed||!process.env.CI){
+  try{if(await run('scripts/precompute-spatial.ts')!==0)failed=true;}
+  catch(error){console.error(error);failed=true;}
+}else console.error('Refresh incomplete; skipping CI precomputation and deployment.');
 if(failed)process.exitCode=1;

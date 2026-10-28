@@ -2,7 +2,7 @@ name: Refresh and deploy weather
 
 on:
   schedule:
-    # GitHub Actions schedules use UTC. 01:00 UTC is 09:00 in Beijing.
+    # GitHub Actions schedules use UTC. 01:14 UTC is 09:14 in Beijing.
     - cron: '14 1 * * *'
   workflow_dispatch:
 
@@ -45,13 +45,18 @@ jobs:
           key: weather-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: weather-v1-
       - name: Seed from the current production snapshot
+        id: seed
         if: steps.weather-cache.outputs.cache-matched-key == ''
         run: node --import tsx scripts/seed-production-weather.ts
       - name: Download and precompute weather
         id: refresh
         continue-on-error: true
-        run: npm run data:refresh
+        run: |
+          set -o pipefail
+          npm run data:refresh 2>&1 | tee "$RUNNER_TEMP/weather-refresh.log"
       - name: Save weather checkpoints
+        id: save-cache
+        continue-on-error: true
         if: ${{ !cancelled() && steps.refresh.outcome != 'skipped' }}
         uses: actions/cache/save@v4
         with:
@@ -64,15 +69,82 @@ jobs:
       - name: Stop after a failed refresh
         if: steps.refresh.outcome != 'success'
         run: |
-          echo '::error::Weather refresh failed; the last checkpoint was saved and production was not changed.'
+          echo '::error::Weather refresh failed; production was not changed. Check the refresh and cache steps for details.'
           exit 1
       - name: Build and deploy to Cloudflare
+        id: deploy
+        if: steps.refresh.outcome == 'success'
         env:
           CLOUDFLARE_ACCOUNT_ID: 33770003f957403d60ec0e54b707fb88
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: npm run deploy:cloudflare
       - name: Verify the published snapshot
+        id: verify
+        if: steps.deploy.outcome == 'success'
         run: |
           curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors \
             https://season.tomori.xyz/data/precomputed/manifest.json -o "$RUNNER_TEMP/live-manifest.json"
-          node -e 'const fs = require("fs"); const expected = JSON.parse(fs.readFileSync("dist/data/precomputed/manifest.json")); const live = JSON.parse(fs.readFileSync(process.argv[1])); if (expected.revision !== live.revision) throw new Error(`Expected ${expected.revision}, received ${live.revision}`); console.log(`Published revision: ${live.revision}`)' "$RUNNER_TEMP/live-manifest.json"
+          revision=$(node -e 'const fs=require("fs"),expected=JSON.parse(fs.readFileSync("dist/data/precomputed/manifest.json")),live=JSON.parse(fs.readFileSync(process.argv[1]));if(expected.revision!==live.revision)throw new Error(`Expected ${expected.revision}, received ${live.revision}`);process.stdout.write(live.revision)' "$RUNNER_TEMP/live-manifest.json")
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          echo "Published revision: $revision"
+      - name: Summarize weather refresh
+        if: ${{ always() }}
+        env:
+          JOB_STATUS: ${{ job.status }}
+          CACHE_MATCHED_KEY: ${{ steps.weather-cache.outputs.cache-matched-key }}
+          RESTORE_STATUS: ${{ steps.weather-cache.outcome }}
+          SEED_STATUS: ${{ steps.seed.outcome }}
+          REFRESH_STATUS: ${{ steps.refresh.outcome }}
+          SAVE_STATUS: ${{ steps.save-cache.outcome }}
+          CACHE_SAVED_KEY: ${{ steps.save-cache.outputs.cache-primary-key }}
+          DEPLOY_STATUS: ${{ steps.deploy.outcome }}
+          VERIFY_STATUS: ${{ steps.verify.outcome }}
+          DEPLOYED_REVISION: ${{ steps.verify.outputs.revision }}
+        run: |
+          refresh_log="$RUNNER_TEMP/weather-refresh.log"
+          retry_count=0
+          quota_wait_count=0
+          rate_limit_count=0
+          county_checkpoint='未完成'
+          grid_checkpoint='未完成'
+          if [ -f "$refresh_log" ]; then
+            retry_count=$(grep -c 'retry in' "$refresh_log" || true)
+            quota_wait_count=$(grep -c 'quota wait' "$refresh_log" || true)
+            rate_limit_count=$(grep -Eic 'HTTP 429|rate limit' "$refresh_log" || true)
+            county_checkpoint=$(grep '^County checkpoint ' "$refresh_log" | tail -n 1 || true)
+            grid_checkpoint=$(grep '^Weather grid checkpoint ' "$refresh_log" | tail -n 1 || true)
+          fi
+          {
+            echo '## 天气更新与发布'
+            echo
+            echo "运行状态：${JOB_STATUS:-unknown}。"
+            echo
+            echo '| 步骤 | 结果 |'
+            echo '| --- | --- |'
+            echo "| 恢复缓存 | ${RESTORE_STATUS:-未执行} |"
+            echo "| 从线上快照初始化 | ${SEED_STATUS:-未执行} |"
+            echo "| 下载与预计算 | ${REFRESH_STATUS:-未执行} |"
+            echo "| 保存断点 | ${SAVE_STATUS:-未执行} |"
+            echo "| Cloudflare 发布 | ${DEPLOY_STATUS:-未执行} |"
+            echo "| 线上版本校验 | ${VERIFY_STATUS:-未执行} |"
+            echo
+            if [ -n "$CACHE_MATCHED_KEY" ]; then
+              echo "恢复的缓存：\`$CACHE_MATCHED_KEY\`。"
+            else
+              echo '没有找到缓存；首次运行或缓存过期时会从线上快照初始化。'
+            fi
+            if [ -n "$CACHE_SAVED_KEY" ]; then
+              echo "保存的断点：\`$CACHE_SAVED_KEY\`。"
+            fi
+            echo
+            echo "Open-Meteo 网络重试：${retry_count:-0} 次；额度等待：${quota_wait_count:-0} 次；限流：${rate_limit_count:-0} 次。"
+            [ "$county_checkpoint" = '未完成' ] || echo "- 县级：\`$county_checkpoint\`"
+            [ "$grid_checkpoint" = '未完成' ] || echo "- 格点：\`$grid_checkpoint\`"
+            if [ -n "$DEPLOYED_REVISION" ]; then
+              echo "- 发布版本：\`$DEPLOYED_REVISION\`"
+            fi
+            echo
+            echo '下载失败时请展开“Download and precompute weather”查看安全错误码和批次进度。429 的短冷却会自动重试一次；较长冷却会立即停止，保留断点并等待上游解除限流。取消或超时可能无法保存本轮断点。'
+            echo
+            echo "[查看本次完整日志]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+          } >> "$GITHUB_STEP_SUMMARY"

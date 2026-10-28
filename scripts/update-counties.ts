@@ -1,10 +1,12 @@
 import {readFile,writeFile,rename,mkdir,open,unlink} from 'node:fs/promises';
-import {fetchCountyBatch} from '../src/lib/county-weather';
+import {countyBatchApiCost,fetchCountyBatch} from '../src/lib/county-weather';
 import {EMPTY_COUNTY_WEATHER,validCountyWeather,countyForecastIsFresh,countyHistoricalDays} from '../src/lib/counties';
 import type {CountyCatalog,CountyWeather} from '../src/lib/counties';
 import {beijingDate,addDays} from '../src/lib/season';
+import {OPEN_METEO_BATCH_SIZE,OpenMeteoQuota,runOpenMeteoBatch} from './open-meteo-request';
 import {acquireWeatherUpdateLock} from './weather-update-lock';
 const directory=new URL('../public/data/',import.meta.url),lock=new URL('../data-sources/county-update.lock',import.meta.url);
+const quota=new OpenMeteoQuota();
 const releaseSharedLock=await acquireWeatherUpdateLock('county');
 try{
 await mkdir(new URL('../data-sources/',import.meta.url),{recursive:true});
@@ -23,22 +25,24 @@ try{
     const series=data.records[unit.id];
     return !series||!countyHistoricalDays(series).some(day=>day.date===latest&&day.mean!==null)||!countyForecastIsFresh(series);
   });
-  const batchSize=40;
+  const batchSize=OPEN_METEO_BATCH_SIZE,batchCount=Math.ceil(pending.length/batchSize);
   console.log(`County weather: ${catalog.units.length-pending.length}/${catalog.units.length} current; ${pending.length} pending`);
   for(let i=0;i<pending.length;i+=batchSize){
-    const started=Date.now(),batch=pending.slice(i,i+batchSize);
-    let error:unknown;
-    for(let attempt=0;attempt<3;attempt++){
-      try{data=await fetchCountyBatch(batch,data,AbortSignal.timeout(45000));error=null;break;}
-      catch(e){error=e;if(e instanceof Error&&/HTTP 429\b/.test(e.message))throw e;if(attempt<2){console.log(`Retry batch after ${e instanceof Error?e.message:String(e)}`);await new Promise(resolve=>setTimeout(resolve,30000));}}
+    const started=Date.now(),batch=pending.slice(i,i+batchSize),batchNumber=Math.floor(i/batchSize)+1;
+    const cost=countyBatchApiCost(batch,data);
+    try{
+      data=await runOpenMeteoBatch({
+        quota,kind:'county',cost,locations:batch.length,
+        task:()=>fetchCountyBatch(batch,data,AbortSignal.timeout(45000)),
+      });
+    }catch(error){
+      console.error(`County batch ${batchNumber}/${batchCount} failed; the previous checkpoint was retained`);
+      throw error;
     }
-    if(error)throw error;
     const target=new URL('county-weather.json',directory),temporary=new URL('county-weather.tmp.json',directory);
     await writeFile(temporary,JSON.stringify(data));await rename(temporary,target);
-    console.log(`County weather ${catalog.units.length-pending.length+Math.min(i+batchSize,pending.length)}/${catalog.units.length} at ${data.updatedAt}`);
-    // Stay below the public location quota; incremental batches only request
-    // two past days after the initial fourteen-day bootstrap.
-    if(i+batchSize<pending.length)await new Promise(resolve=>setTimeout(resolve,Math.max(0,6500-(Date.now()-started))));
+    const completed=catalog.units.length-pending.length+Math.min(i+batchSize,pending.length);
+    console.log(`County checkpoint ${batchNumber}/${batchCount}: ${completed}/${catalog.units.length}, ${batch.length} locations, ${cost.toFixed(1)} calls, ${((Date.now()-started)/1000).toFixed(1)}s, ${data.updatedAt}`);
   }
   console.log('County model snapshot complete');
 }finally{await unlink(lock).catch(()=>{});}

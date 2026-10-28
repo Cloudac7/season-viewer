@@ -29,7 +29,7 @@ Cloudflare 部署使用 Wrangler 与 Workers Static Assets。首次使用前执�
 
 ## 每日自动更新
 
-GitHub Actions 工作流 `.github/workflows/daily-weather.yml` 每天北京时间 09:00（UTC 01:00）计划运行，也可在 GitHub Actions 中手动触发。GitHub 的计划任务可能排队延迟。工作流从线上快照或上次运行的缓存恢复县级和格点历史、配额及限流状态，下载最新资料，完成预计算后部署并校验线上版本。失败的下载会保存已完成的断点并停止部署；可在 Actions 页面查看错误并手动重试。缓存被清理后，工作流会从当前线上快照重新接续。
+GitHub Actions 工作流 `.github/workflows/daily-weather.yml` 每天北京时间 09:14（UTC 01:14）计划运行，也可在 GitHub Actions 中手动触发。GitHub 的计划任务可能排队延迟，下载、预计算及部署需要额外时间。工作流从线上快照或上次运行的缓存恢复县级和格点历史、配额及限流状态，下载最新资料，完成预计算后部署并校验线上版本。下载失败时任务会尝试保存已完成的断点并停止部署；运行摘要列出缓存、更新、限流和部署状态，详细批次进度可在 Actions 日志查看。缓存被清理后，工作流会从当前线上快照重新接续。
 
 启用前，在仓库 Settings → Secrets and variables → Actions 添加 `CLOUDFLARE_API_TOKEN`。可在 Cloudflare 创建限制到本项目账号和域名的 Workers 部署令牌，使用 **Edit Cloudflare Workers** 模板；令牌值只保存在 GitHub Secret，不要提交到仓库。工作流使用已配置的 Cloudflare 账号 ID。操作完成后在 Actions 中运行一次 **Refresh and deploy weather**，确认抓取和部署成功。
 
@@ -88,4 +88,4 @@ GitHub Actions 工作流 `.github/workflows/daily-weather.yml` 每天北京时�
 
 尚未实现完整国家标准业务判定：没有 1991–2020 常年日温，未执行偏早二次判断、正式稳定通过和无冬/无夏校正。短历史会出现初始估计，春秋方向使用上/下半年辅助规则，不能替代官方入季结论。边界也不保证包含最新区划调整。
 
-Open-Meteo 免费接口用于非商业原型，调用配额按位置和时间跨度计入；更新器逐日增量、断点落盘、共享下载互斥，正式使用应核对[现行许可与配额](https://open-meteo.com/en/pricing)。
+Open-Meteo 免费接口用于非商业原型，调用配额按位置和时间跨度计入。更新器使用 POST 合并多坐标，每批最多 100 个代表点；二十一天冷启动窗口按每个位置 1.5 次调用计费，未超过十四天的增量窗口按 1 次计费。县级与格点共用保守的分钟、小时和每日额度账本，不会因两个独立进程而重复占用配额；正式使用应核对[现行许可与配额](https://open-meteo.com/en/pricing)。
