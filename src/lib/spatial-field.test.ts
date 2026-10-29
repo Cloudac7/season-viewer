@@ -106,17 +106,16 @@ test('incomplete future days cannot imply completion and old snapshots stay miss
   assert.equal(computeSpatialField(input).seasons[4], -1);
 });
 
-test('projection prefilter retains a transition that starts wholly within the forecast', () => {
+test('a transition that starts wholly within the forecast does not enter either seasonal status', () => {
   const input = fixture(Array(14).fill(25), Array(7).fill(18));
   const reading = sampleGridCell(input, 100.5, 30.5)!;
   assert.equal(reading.state!.season, 'summer');
   assert.equal(reading.state!.transition, null);
-  assert.equal(reading.forecastTransition!.target, 'autumn');
-  assert.equal(reading.forecastTransition!.expectedDate, '2026-11-01');
+  assert.equal(reading.forecastTransition, null);
   const result = computeSpatialField(input);
-  assert.equal(result.status[4], 2);
+  assert.equal(result.status[4], 0);
   assert.equal(result.transitionDays[4], 0);
-  assert.equal(result.expectedDays[4], 7);
+  assert.equal(result.expectedDays[4], 0);
 });
 
 test('retrieval-day temperature never becomes historical merely because the selected date advances', () => {

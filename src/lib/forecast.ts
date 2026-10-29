@@ -15,7 +15,10 @@ export function forecastIsFresh(forecast:TemperatureForecast|undefined,now=new D
 
 export function projectTransition(state:SeasonState,forecast:TemperatureForecast|undefined,date:string,now=new Date()):ForecastTransition|null {
   const transition=state.transition;
-  if(!forecastIsFresh(forecast,now)||date!==addDays(beijingDate(now),-1)||state.average===null)return null;
+  // Forecast completion is only an extension of a transition already observed
+  // on complete days. A transition that starts wholly in the forecast is not
+  // "currently transitioning" and therefore remains outside both map stages.
+  if(!transition||!forecastIsFresh(forecast,now)||date!==addDays(beijingDate(now),-1)||state.average===null)return null;
   const history=state.history.filter(day=>day.date<=date);
   if(history.at(-1)?.date!==date)return null;
   const future=forecast!.days.slice(0,7);
@@ -31,13 +34,13 @@ export function projectTransition(state:SeasonState,forecast:TemperatureForecast
       continue;
     }
     if(next.season!==state.season&&!next.estimated){
-      if(transition&&next.season!==transition.target)return null;
+      if(next.season!==transition.target)return null;
       completion={target:next.season,expectedDate:day.date,forecastDays:index+1,issuedAt:forecast!.issuedAt};
       continue;
     }
     // A broken run cannot be restarted later in the forecast and described as
     // completion of the transition currently observed on the map.
-    if(transition&&(next.season!==state.season||next.transition?.target!==transition.target||next.transition.start!==transition.start||next.transition.days!==transition.days+index+1))return null;
+    if(next.season!==state.season||next.transition?.target!==transition.target||next.transition.start!==transition.start||next.transition.days!==transition.days+index+1)return null;
   }
   return completion;
 }

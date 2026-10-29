@@ -58,6 +58,6 @@ export function summarizePrefectures(readings:CountyReading[]):PrefectureSummary
     const ready=group.filter(reading=>reading.state!==null);
     const counts=new Map<SeasonState['season'],number>();for(const reading of ready)counts.set(reading.state!.season,(counts.get(reading.state!.season)??0)+1);
     const most=Math.max(0,...counts.values()),mainSeasons=SEASON_ORDER.filter(season=>most>0&&counts.get(season)===most),season=mainSeasons[0]??null;
-    return {id:String(code),name:group[0].unit.city,province:group[0].unit.province,region:group[0].unit.region,readings:group,ready,season,mainSeasons,average:ready.length?ready.reduce((sum,r)=>sum+r.state!.average!,0)/ready.length:null,transitionCount:ready.filter(r=>r.state!.transition||r.forecastTransition).length,forecastCount:ready.filter(r=>r.forecastTransition).length};
+    return {id:String(code),name:group[0].unit.city,province:group[0].unit.province,region:group[0].unit.region,readings:group,ready,season,mainSeasons,average:ready.length?ready.reduce((sum,r)=>sum+r.state!.average!,0)/ready.length:null,transitionCount:ready.filter(r=>r.state!.transition).length,forecastCount:ready.filter(r=>r.state!.transition&&r.forecastTransition?.target===r.state!.transition.target).length};
   });
 }

@@ -17,10 +17,10 @@ function fixture(): SpatialFieldResult {
 
 test('spatial display preserves discrete seasonal and forecast colors, missing values and temperature bins', () => {
   const field = fixture(), options = { layer: 'season' as const, showTransitions: true, filter: 'all' as const };
-  assert.deepEqual(spatialCellAppearance(field, 4, options), { fill: '#8754b0', opacity: 1 });
-  assert.deepEqual(spatialCellAppearance(field, 5, options), { fill: '#b7354f', opacity: 1 });
+  assert.deepEqual(spatialCellAppearance(field, 4, options), { fill: '#b7354f', opacity: 1 });
+  assert.deepEqual(spatialCellAppearance(field, 5, options), { fill: '#8754b0', opacity: 1 });
   assert.deepEqual(spatialCellAppearance(field, 4, { ...options, showTransitions: false }), { fill: '#ed9b4e', opacity: 1 });
-  assert.deepEqual(spatialCellAppearance(field, 4, { ...options, filter: 'winter' }), { fill: '#8754b0', opacity: 0.18 });
+  assert.deepEqual(spatialCellAppearance(field, 4, { ...options, filter: 'winter' }), { fill: '#b7354f', opacity: 0.18 });
   assert.deepEqual(spatialCellAppearance(field, 3, { ...options, layer: 'temperature' }), { fill: '#bdd363', opacity: 1 });
   assert.equal(spatialCellAppearance(field, 8, options), null);
 });

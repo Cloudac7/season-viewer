@@ -17,10 +17,10 @@ test('projection confirms a current uninterrupted transition without changing th
   assert.deepEqual(projectTransition(state,forecast(),'2026-10-10',now),{target:'autumn',expectedDate:'2026-10-11',forecastDays:1,issuedAt:'2026-10-11T00:00:00Z'});
   assert.equal(state.season,'summer');assert.equal(JSON.stringify(state),before);
 });
-test('projection can identify a transition beginning and completing wholly in the forecast',()=>{
+test('projection ignores a transition that begins wholly in the forecast',()=>{
   const state=classifyCity(city,history(Array(9).fill(25)),'2026-10-10');
   assert.equal(state.transition,null);
-  assert.equal(projectTransition(state,forecast(),'2026-10-10',now)?.expectedDate,'2026-10-17');
+  assert.equal(projectTransition(state,forecast(),'2026-10-10',now),null);
   assert.equal(projectTransition(state,forecast(Array(7).fill(23)),'2026-10-10',now),null);
 });
 test('projection requires current forecasts and never overlays them on historical dates',()=>{

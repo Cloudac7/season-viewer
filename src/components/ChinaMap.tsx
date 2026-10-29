@@ -52,7 +52,7 @@ export default function ChinaMap({ states, forecastByCity, selected, onSelect, f
   return <div className="map-canvas" onMouseLeave={() => setHover(null)}>
     <div className="map-watermark">CHINA<br/><span>SEASON ATLAS</span></div>
     <div className="map-scale"><span>全国视图</span><i/>代表城市滑标估算</div>
-    <svg className="china-map" viewBox="0 0 840 550" role="img" aria-label="全国季节分布交互地图，省域季节由代表城市多数季节确定，换季颜色提示来自已覆盖城市，不表示全省一致；预报预计完成尚未实况确认">
+    <svg className="china-map" viewBox="0 0 840 550" role="img" aria-label="全国季节分布交互地图，省域季节由代表城市多数季节确定，换季颜色提示来自已覆盖城市，不表示全省一致；预计完成换季要求实况已经启动过程">
       <defs><filter id="map-shadow"><feDropShadow dx="0" dy="5" stdDeviation="7" floodColor="#516456" floodOpacity=".07"/></filter><clipPath id="sea-clip"><rect x="2" y="2" width="75" height="80"/></clipPath></defs>
       <g transform={`translate(420 260) scale(${zoom}) translate(-420 -260)`}>
         <path d={path(geoGraticule10()) ?? ''} className="graticule"/>
@@ -64,7 +64,7 @@ export default function ChinaMap({ states, forecastByCity, selected, onSelect, f
             const valid = group.filter(s => s.average !== null);
             const average = valid.length ? valid.reduce((sum,s) => sum + s.average!, 0) / valid.length : null;
             const muted = filter !== 'all' && !group.some(s => s.season === filter);
-            const forecastCity = valid.find(s => forecastByCity[s.city.id]);
+            const forecastCity = valid.find(s => s.transition && forecastByCity[s.city.id]?.target === s.transition.target);
             const pendingCity = valid.find(s => s.transition);
             const signalCity = forecastCity ?? pendingCity;
             const appearance = showTransitions && signalCity ? transitionAppearance(signalCity, forecastByCity[signalCity.city.id]) : null;
@@ -74,7 +74,7 @@ export default function ChinaMap({ states, forecastByCity, selected, onSelect, f
             const hoverState = transition === 'forecast' ? forecastCity : transition === 'pending' ? pendingCity : state;
             const active = group.some(s => s.city.id === selected);
             return <g key={feature.properties.adcode} opacity={muted ? .22 : 1} data-transition={transition} data-transition-from={appearance&&signalCity?signalCity.season:undefined} data-transition-target={appearance?.target}>
-              <path d={path(feature) ?? ''} fill={fill} className={`province ${active ? 'selected' : ''}`} role="button" tabIndex={0} aria-label={`${feature.properties.name}，代表城市多数季节：${main && average !== null ? SEASONS[main.season].name : '暂无数据'}${appearance&&signalCity ? `，部分已覆盖城市${SEASONS[signalCity.season].name}转${SEASONS[appearance.target].name}，${appearance.label}${transition === 'forecast' ? '，尚未实况确认' : ''}` : ''}，不表示全省一致，点击查看代表城市`}
+              <path d={path(feature) ?? ''} fill={fill} className={`province ${active ? 'selected' : ''}`} role="button" tabIndex={0} aria-label={`${feature.properties.name}，代表城市多数季节：${main && average !== null ? SEASONS[main.season].name : '暂无数据'}${appearance&&signalCity ? `，部分已覆盖城市${SEASONS[signalCity.season].name}转${SEASONS[appearance.target].name}，${appearance.label}` : ''}，不表示全省一致，点击查看代表城市`}
                 onClick={() => state && onSelect(state.city.id)} onKeyDown={e => { if ((e.key === 'Enter' || e.key === ' ') && state) { e.preventDefault(); onSelect(state.city.id); } }}
                 onMouseMove={e => hoverState && setHover({ state: hoverState, x: e.clientX, y: e.clientY })}/>
             </g>;
@@ -102,6 +102,6 @@ export default function ChinaMap({ states, forecastByCity, selected, onSelect, f
     </svg>
     <div className="map-controls"><button onClick={() => setZoom(z => Math.min(1.7,z + .15))} aria-label="放大地图"><Plus size={17}/></button><button onClick={() => setZoom(z => Math.max(.85,z - .15))} aria-label="缩小地图"><Minus size={17}/></button><span/><button onClick={() => setZoom(1)} aria-label="重置地图"><LocateFixed size={17}/></button></div>
     {zoom !== 1 && <button className="reset-map" onClick={() => setZoom(1)}><RotateCcw size={12}/>重置视图</button>}
-    {hover && <div className="map-tooltip" style={{ left: Math.min(hover.x + 15, window.innerWidth - 225), top: Math.min(hover.y + 15, window.innerHeight - 145) }}><div><strong>{hover.state.city.name}</strong><span style={{ color: SEASONS[hover.state.season].color }}>{SEASONS[hover.state.season].name}</span></div><p>5 日滑动均温 <b>{hover.state.average?.toFixed(1) ?? '—'}°C</b></p><small style={{color:hoverAppearance?.color}}>{forecastByCity[hover.state.city.id] ? `当前预报预计 ${forecastByCity[hover.state.city.id].expectedDate} ${SEASONS[forecastByCity[hover.state.city.id].target].verb}完成，尚未实况确认` : hover.state.transition ? `${SEASONS[hover.state.transition.target].verb}观察中 · ${hover.state.transition.days}/5 天` : '点击查看气温与季节详情'}</small></div>}
+    {hover && <div className="map-tooltip" style={{ left: Math.min(hover.x + 15, window.innerWidth - 225), top: Math.min(hover.y + 15, window.innerHeight - 145) }}><div><strong>{hover.state.city.name}</strong><span style={{ color: SEASONS[hover.state.season].color }}>{SEASONS[hover.state.season].name}</span></div><p>5 日滑动均温 <b>{hover.state.average?.toFixed(1) ?? '—'}°C</b></p><small style={{color:hoverAppearance?.color}}>{hoverAppearance?.status === 'forecast' ? `预计完成换季 · ${SEASONS[forecastByCity[hover.state.city.id].target].verb} · ${forecastByCity[hover.state.city.id].expectedDate}` : hover.state.transition ? `正在换季 · ${SEASONS[hover.state.transition.target].verb} · ${hover.state.transition.days}/5 天` : '点击查看气温与季节详情'}</small></div>}
   </div>;
 }

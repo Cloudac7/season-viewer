@@ -11,7 +11,7 @@ export default function TransitionLegend({directions,enabled,onToggle}:{directio
     <div className="transition-legend-heading"><span>换季色阶 <small>当前季节 → 目标季节</small></span><button className="transition-legend" onClick={onToggle} aria-pressed={enabled}><span className={`switch ${enabled?'on':''}`}><i/></span>标记换季</button></div>
     <div className="transition-palette-grid">{visible.map(({from,target})=>{
       const colors=transitionColors(from,target);
-      return <div className="transition-palette-item" key={`${from}-${target}`}><b>{SEASONS[from].name.slice(0,1)} → {SEASONS[target].name.slice(0,1)}</b><span><i style={{background:colors.pending.fill}}/>进行中</span><span><i style={{background:colors.forecast.fill}}/>预报预计完成</span></div>;
+      return <div className="transition-palette-item" key={`${from}-${target}`}><b>{SEASONS[from].name.slice(0,1)} → {SEASONS[target].name.slice(0,1)}</b><span><i style={{background:colors.pending.fill}}/>正在换季</span><span><i style={{background:colors.forecast.fill}}/>预计完成换季</span></div>;
     })}</div>
     {!visible.length&&<p className="transition-legend-empty">当前范围暂无换季信号，出现时显示对应方向色阶。</p>}
   </section>;

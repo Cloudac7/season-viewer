@@ -58,9 +58,12 @@ test('precomputed forecast expires at Beijing midnight and the source deadline',
 test('county snapshots retain prepared states and expire forecasts without classifying again',()=>{
   const input=fixture(),unit:CountyUnit={id:'1',name:'县',provinceCode:1,province:'省',cityCode:11,city:'市',region:'西北',kind:'county',display:[100,30],lon:100,lat:30,pointMethod:'test'};
   const reading=classifyCounty(unit,input.weather.records.p0,date,new Date(now));
+  reading.state={...reading.state!,transition:{target:'winter',days:2,start:'2026-10-24',threshold:10}};
   reading.forecastTransition={target:'winter',expectedDate:'2026-10-29',forecastDays:4,issuedAt};
   const saved=packCountyReadings(date,[reading],summarizePrefectures([reading]),issuedAt),current=unpackCountyReadings(saved,[unit],new Date(now))[0];
   assert.equal(current.unit,unit);assert.equal(current.state!.season,reading.state!.season);assert.equal(current.state!.average,reading.state!.average);assert.deepEqual(current.forecastTransition,reading.forecastTransition);
+  const withoutObserved=structuredClone(saved);withoutObserved.readings[0].state!.transition=null;
+  assert.equal(unpackCountyReadings(withoutObserved,[unit],new Date(now))[0].forecastTransition,null);
   assert.equal(unpackCountyReadings(saved,[unit],new Date('2026-10-26T16:00:00Z'))[0].forecastTransition,null);
 });
 test('manifest validation requires a complete frame publication',()=>{

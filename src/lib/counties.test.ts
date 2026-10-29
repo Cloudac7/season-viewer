@@ -88,13 +88,13 @@ test('prefecture summaries exclude missing counties and report tied seasons',()=
   const summary=summarizePrefectures([first,second,missing])[0];
   assert.equal(summary.ready.length,2);assert.equal(summary.readings.length,3);assert.equal(summary.average,15);assert.deepEqual(summary.mainSeasons,['summer','winter']);
 });
-test('prefecture signals count observed and forecast transitions once per county',()=>{
+test('prefecture signals count only observed transitions and their forecast completions',()=>{
   const observed=classifyCounty(unit,days([24,24,24,24,24,18,18,18,18,18]),'2026-10-10');
   const forecast={target:'autumn' as const,expectedDate:'2026-10-11',forecastDays:1,issuedAt:'2026-10-11T00:00:00Z'};
   const both={...observed,forecastTransition:forecast};
   const predicted={...classifyCounty({...unit,id:'future'},days(Array(9).fill(25)),'2026-10-09'),forecastTransition:forecast};
   const summary=summarizePrefectures([both,predicted])[0];
-  assert.equal(summary.transitionCount,2);assert.equal(summary.forecastCount,2);
+  assert.equal(summary.transitionCount,1);assert.equal(summary.forecastCount,1);
 });
 test('county seasons use the exact four legend colors rather than interpolated mixtures',()=>{
   const state=classifyCounty(unit,days(Array(9).fill(15)),'2026-10-09').state!;

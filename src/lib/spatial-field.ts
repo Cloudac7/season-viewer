@@ -183,20 +183,6 @@ export function sampleTemperatureSeries(input: SpatialFieldInput, longitude: num
   return sampleSeries(context(input), longitude, latitude);
 }
 
-function futureCanCrossBoundary(state: SeasonState, forecast: TemperatureForecast | undefined): boolean {
-  if (!forecast) return false;
-  if (state.transition) return true;
-  const window = state.history.slice(-4).map(day => day.mean);
-  for (const day of forecast.days.slice(0, 7)) {
-    window.push(day.mean);
-    if (window.length > 5) window.shift();
-    if (window.length !== 5 || window.some(value => value === null)) return false;
-    const mean = window.reduce<number>((sum, value) => sum + value!, 0) / 5;
-    if (state.season === 'winter' ? mean >= 10 : state.season === 'summer' ? mean < 22 : mean < 10 || mean >= 22) return true;
-  }
-  return false;
-}
-
 function classify(ctx: Context, series: SpatialTemperatureSeries, longitude: number, latitude: number): SpatialCell {
   const { date } = ctx.input;
   const base = { ...series, longitude, latitude, state: null, forecastTransition: null, estimated: true };
@@ -206,10 +192,10 @@ function classify(ctx: Context, series: SpatialTemperatureSeries, longitude: num
   if (recent.length !== 9 || recent.some((day, i) => day.date !== addDays(date, i - 8) || day.mean === null || !Number.isFinite(day.mean))) return { ...base, status: 'insufficient' };
   const city: City = { id: `grid:${longitude}:${latitude}`, name: '地形订正格点', province: '', code: 0, region: '西北', lat: latitude, lon: longitude, annual: 0, amplitude: 0 };
   const state = classifyCity(city, series.days, date);
-  // Most pixels never cross a threshold in the next seven days. Avoid seven
-  // complete state-machine replays for these pixels; the final decision still
-  // uses the same projectTransition function as county and city readouts.
-  const forecastTransition = date === addDays(beijingDate(ctx.now), -1) && futureCanCrossBoundary(state, series.forecast)
+  // Only an observed transition can gain a forecast completion state. This
+  // keeps pending and forecast-completion masks within the same public
+  // definition used by county and city readouts.
+  const forecastTransition = date === addDays(beijingDate(ctx.now), -1) && state.transition
     ? projectTransition(state, series.forecast, date, ctx.now) : null;
   return { ...series, longitude, latitude, state, forecastTransition, status: 'ready', estimated: state.estimated };
 }

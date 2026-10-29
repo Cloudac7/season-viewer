@@ -118,7 +118,8 @@ export function unpackCountyReadings(saved:PrecomputedCounties,units:CountyUnit[
   return units.map(unit=>{
     const row=byId.get(unit.id),state=row?.state?{...row.state,city:{id:unit.id,name:unit.name,province:unit.province,code:unit.provinceCode,region:unit.region,lat:unit.lat,lon:unit.lon,annual:0,amplitude:0},history:[],averages:[]}:null;
     const series:CountySeries|null=row?.updatedAt?{lon:unit.lon,lat:unit.lat,updatedAt:row.updatedAt,days:[]}:null;
-    return {unit,state,series,status:row?.status??'missing',forecastTransition:row?.forecastValidUntil&&now.getTime()<Date.parse(row.forecastValidUntil)?row.forecastTransition:null};
+    const liveForecast=!!row?.forecastValidUntil&&now.getTime()<Date.parse(row.forecastValidUntil)&&!!state?.transition&&row.forecastTransition?.target===state.transition.target;
+    return {unit,state,series,status:row?.status??'missing',forecastTransition:liveForecast?row!.forecastTransition:null};
   });
 }
 

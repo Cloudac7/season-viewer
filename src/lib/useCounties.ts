@@ -54,7 +54,7 @@ export function useCounties(date:string){
   const summaries=useMemo<PrefectureSummary[]>(()=>{
     if(!saved||saved.date!==date)return [];const groups=new Map<string,typeof readings>();
     for(const reading of readings){const id=String(reading.unit.cityCode);if(!groups.has(id))groups.set(id,[]);groups.get(id)!.push(reading);}
-    return saved.summaries.map(summary=>{const group=groups.get(summary.id)??[];return {...summary,readings:group,ready:group.filter(reading=>reading.state!==null),transitionCount:group.filter(reading=>reading.state?.transition||reading.forecastTransition).length,forecastCount:group.filter(reading=>reading.forecastTransition).length};});
+    return saved.summaries.map(summary=>{const group=groups.get(summary.id)??[];return {...summary,readings:group,ready:group.filter(reading=>reading.state!==null),transitionCount:group.filter(reading=>reading.state?.transition).length,forecastCount:group.filter(reading=>reading.state?.transition&&reading.forecastTransition?.target===reading.state.transition.target).length};});
   },[saved,readings,date]);
   const forecastCount=manifest?.evaluatedDay===beijingDate(new Date(clock))?(frame?.countyForecastCount??0):0;
   return {catalog,boundaries,data,readings,ready,summaries,completeCount:frame?.countyCompleteCount??0,forecastCount,firstUsableDate:manifest?.firstUsableDate??'',availableDates:manifest?.dates??[],loading,error,refresh,hasUpdater};
