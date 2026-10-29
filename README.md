@@ -25,11 +25,19 @@ npm run data:terrain:import    # 导入公开 Terrarium DEM（需联网，原始
 
 `data:refresh` 遇上游失败会停止后续下载，仍尝试用已有资料生成可用快照，错误以退出码报告。429 不循环重试或绕过配额。正式静态部署需由部署环境每日运行 `data:refresh` 再执行 `build`、发布 `dist/`；浏览器不会直接向 Open-Meteo 发起全国 API 请求。静态托管本身不会获取新天气，页面保留真实资料时间。
 
-Cloudflare 部署使用 Wrangler 与 Workers Static Assets。首次使用前执行 `npx wrangler login` 完成 Cloudflare OAuth；`npm run deploy:cloudflare` 会重新构建（包含每日快照预计算），再将 `dist/` 部署到配置的 `season.tomori.xyz` 自定义域。Cloudflare 账号须包含并启用 `tomori.xyz` zone，且该子域尚未绑定其他 CNAME/服务；Wrangler 会为 Workers 自定义域建立 DNS 记录并申请证书。后续每次天气资料刷新后重新运行此命令即可发布新快照。
+Cloudflare 部署使用 Wrangler、Workers Static Assets 和 Cron Triggers。首次使用前执行 `npx wrangler login` 完成 Cloudflare OAuth；`npm run deploy:cloudflare` 会重新构建（包含每日快照预计算），再将站点和定时触发器部署到配置的 `season.tomori.xyz` 自定义域。Cloudflare 账号须包含并启用 `tomori.xyz` zone，且该子域尚未绑定其他 CNAME/服务；Wrangler 会为 Workers 自定义域建立 DNS 记录并申请证书。后续每次天气资料刷新后重新运行此命令即可发布新快照。
 
 ## 每日自动更新
 
-GitHub Actions 工作流 `.github/workflows/daily-weather.yml` 每天北京时间 09:14（UTC 01:14）计划运行，也可在 GitHub Actions 中手动触发。GitHub 的计划任务可能排队延迟，下载、预计算及部署需要额外时间。工作流从线上快照或上次运行的缓存恢复县级和格点历史、配额及限流状态，下载最新资料，完成预计算后部署并校验线上版本。下载失败时任务会尝试保存已完成的断点并停止部署；运行摘要列出缓存、更新、限流和部署状态，详细批次进度可在 Actions 日志查看。缓存被清理后，工作流会从当前线上快照重新接续。
+GitHub 原生 `schedule` 事件可能长时间延迟或跳过，因此生产定时入口改由 Cloudflare Worker 的 Cron Trigger 负责：每天北京时间 09:00（UTC 01:00）向 GitHub 发送一次 `workflow_dispatch`，触发 `.github/workflows/daily-weather.yml`。工作流仍可在 GitHub Actions 中手动运行，但不再配置第二个 GitHub 原生定时入口，避免两边同时触发后重复下载和消耗配额。Cloudflare 的计划执行也可能有少量延迟；下载、预计算及部署需要额外时间。
+
+首次启用 Cron Trigger 前，在 GitHub 创建仅限 `Cloudac7/season-viewer` 仓库、具有 **Actions: Read and write** 权限的 fine-grained token，并把它保存为 Cloudflare Worker Secret：
+
+```sh
+npx wrangler secret put GITHUB_DISPATCH_TOKEN
+```
+
+令牌只保存到 Cloudflare Secret，不能写入 `wrangler.jsonc`、GitHub Actions Secret 或仓库文件。可用 `npx wrangler tail season-atlas` 查看 Cron 调用与 GitHub API 错误。工作流从线上快照或上次运行的缓存恢复县级和格点历史、配额及限流状态，下载最新资料，完成预计算后部署并校验线上版本。下载失败时任务会尝试保存已完成的断点并停止部署；运行摘要列出缓存、更新、限流和部署状态，详细批次进度可在 Actions 日志查看。缓存被清理后，工作流会从当前线上快照重新接续。
 
 启用前，在仓库 Settings → Secrets and variables → Actions 添加 `CLOUDFLARE_API_TOKEN`。可在 Cloudflare 创建限制到本项目账号和域名的 Workers 部署令牌，使用 **Edit Cloudflare Workers** 模板；令牌值只保存在 GitHub Secret，不要提交到仓库。工作流使用已配置的 Cloudflare 账号 ID。操作完成后在 Actions 中运行一次 **Refresh and deploy weather**，确认抓取和部署成功。
 

@@ -1,9 +1,6 @@
 name: Refresh and deploy weather
 
 on:
-  schedule:
-    # GitHub Actions schedules use UTC. 01:14 UTC is 09:14 in Beijing.
-    - cron: '14 1 * * *'
   workflow_dispatch:
 
 permissions:

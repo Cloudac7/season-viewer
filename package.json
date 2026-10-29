@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "deploy:cloudflare": "npm run build && wrangler deploy",
     "preview": "vite preview --host 127.0.0.1",
-    "test": "node --import tsx --test src/lib/*.test.ts",
+    "test": "node --import tsx --test src/lib/*.test.ts worker/*.test.ts",
     "data:update": "node --import tsx scripts/update-snapshot.ts",
     "data:counties:update": "node --import tsx scripts/update-counties.ts",
     "data:counties:import": "node --import tsx scripts/import-counties.ts",
