@@ -32,3 +32,21 @@
 @media(max-width:700px){.spatial-stat-caption{font-size:8px;margin-bottom:-13px}.spatial-method-note{margin:8px 13px 0;font-size:7px}.dual-map-toolbar .map-search{margin-left:0}.dual-map-toolbar .map-view-switch button{padding:6px 8px}.spatial-map-loading{font-size:8px;padding:8px 11px}}
 
 .map-view-label{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:#647d68;white-space:nowrap}.spatial-detail .city-top h3{display:block;font-size:18px;line-height:1.75;overflow-wrap:anywhere}.spatial-detail .city-top h3>svg{margin-right:7px;vertical-align:-2px}.spatial-detail .county-breadcrumb{line-height:1.9}.spatial-detail .city-top{margin-bottom:17px}.dual-map-toolbar .map-view-label{margin-right:8px}@media(max-width:700px){.map-view-label{font-size:10px}.spatial-detail .city-top h3{font-size:19px}.dual-map-toolbar .map-search{flex-basis:100%}}
+
+/* Keep the map geometry independent of legend and sidebar content heights. */
+.dashboard-grid{align-items:start}
+.map-card{align-self:start}
+.field-canvas{flex:0 0 auto;align-items:stretch}
+.spatial-detail .city-top>div{min-width:0;width:100%}
+.spatial-detail .city-top h3{display:flex;align-items:center;flex-wrap:nowrap;min-width:0;max-width:100%;white-space:nowrap}
+.spatial-detail .city-top h3>svg{flex:0 0 auto}
+.spatial-detail .city-top h3>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:inherit;color:inherit;margin-left:0;letter-spacing:inherit;font-weight:inherit}
+
+/* Temperature numbers mark the exact boundaries shared by adjacent bands. */
+.weather-temperature-bands>div{position:relative}
+.weather-temperature-bands>div>i{width:100%}
+.weather-temperature-axis{position:relative;height:16px;margin-top:4px;color:#687c8b;font-size:8px;font-variant-numeric:tabular-nums}
+.weather-temperature-axis>small{position:absolute;top:0;line-height:1.5;white-space:nowrap;transform:translateX(-50%)}
+.weather-temperature-axis>small.edge-start{transform:none;text-align:left}
+.weather-temperature-axis>small.edge-end{transform:translateX(-100%);text-align:right}
+@media(max-width:700px){.weather-temperature-axis{font-size:7px}.weather-temperature-axis>small{line-height:1.4}}

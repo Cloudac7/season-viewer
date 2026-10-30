@@ -18,7 +18,9 @@ export const TRANSITION_PALETTES:Partial<Record<`${Season}-${Season}`,{pending:T
   'spring-winter': {pending:{fill:'#419fb4',color:'#2b7484',pale:'#e6f4f7'},forecast:{fill:'#7062b5',color:'#564991',pale:'#efedfa'}},
   'summer-spring': {pending:{fill:'#a9be42',color:'#728025',pale:'#f1f6e0'},forecast:{fill:'#3b9c68',color:'#287348',pale:'#e8f5ee'}},
   'autumn-summer': {pending:{fill:'#aaa33b',color:'#756e20',pale:'#f6f3df'},forecast:{fill:'#d9aa29',color:'#916d16',pale:'#fbf3dc'}},
-  'winter-autumn': {pending:{fill:'#9b6eb0',color:'#774e8a',pale:'#f4ebf8'},forecast:{fill:'#cc6152',color:'#9c453b',pale:'#fbece8'}},
+  // A winter-to-autumn reversal follows a cool current season toward autumn:
+  // teal marks an unresolved process and ochre marks forecast completion.
+  'winter-autumn': {pending:{fill:'#3f9ba8',color:'#276d77',pale:'#e7f4f5'},forecast:{fill:'#c79624',color:'#896616',pale:'#faf3df'}},
 };
 export const REGIONS: Region[] = ['华北', '东北', '华东', '华中', '华南', '西南', '西北', '港澳台'];
 

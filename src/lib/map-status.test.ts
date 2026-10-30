@@ -40,6 +40,15 @@ test('autumn to winter uses deep red while pending and purple after the forecast
   assert.notEqual(countyMapColor(forecast,'season',true),TRANSITION_PALETTES['summer-autumn']!.forecast.fill);
 });
 
+test('winter to autumn uses a teal and ochre palette distinct from both autumn to winter states',()=>{
+  const winterAutumn=TRANSITION_PALETTES['winter-autumn']!,autumnWinter=TRANSITION_PALETTES['autumn-winter']!;
+  assert.equal(winterAutumn.pending.fill,'#3f9ba8');
+  assert.equal(winterAutumn.forecast.fill,'#c79624');
+  for(const winterColor of [winterAutumn.pending.fill,winterAutumn.forecast.fill]){
+    for(const entryColor of [autumnWinter.pending.fill,autumnWinter.forecast.fill])assert.notEqual(winterColor,entryColor);
+  }
+});
+
 test('forecast completion cannot be rendered without an observed transition',()=>{
   const unit:CountyUnit={id:'test',name:'测试县',provinceCode:110000,province:'北京',cityCode:110100,city:'北京',region:'华北',kind:'county',display:[116,40],lon:116,lat:40,pointMethod:'测试'};
   const issuedAt='2026-10-11T00:00:00Z',now=new Date(issuedAt);
