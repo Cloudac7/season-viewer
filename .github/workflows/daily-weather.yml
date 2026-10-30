@@ -37,10 +37,10 @@ jobs:
           path: |
             public/data/county-weather.json
             public/data/weather-grid-weather.json
-            data-sources/weather-grid-usage.json
-            data-sources/weather-grid-backoff.json
           key: weather-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: weather-v1-
+      - name: Discard cross-run quota state
+        run: rm -f data-sources/weather-grid-usage.json data-sources/weather-grid-backoff.json
       - name: Seed from the current production snapshot
         id: seed
         if: steps.weather-cache.outputs.cache-matched-key == ''
@@ -48,6 +48,8 @@ jobs:
       - name: Download and precompute weather
         id: refresh
         continue-on-error: true
+        env:
+          OPEN_METEO_QUOTA_SESSION: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           set -o pipefail
           npm run data:refresh 2>&1 | tee "$RUNNER_TEMP/weather-refresh.log"
@@ -60,8 +62,6 @@ jobs:
           path: |
             public/data/county-weather.json
             public/data/weather-grid-weather.json
-            data-sources/weather-grid-usage.json
-            data-sources/weather-grid-backoff.json
           key: weather-v1-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Stop after a failed refresh
         if: steps.refresh.outcome != 'success'
@@ -97,6 +97,7 @@ jobs:
           DEPLOY_STATUS: ${{ steps.deploy.outcome }}
           VERIFY_STATUS: ${{ steps.verify.outcome }}
           DEPLOYED_REVISION: ${{ steps.verify.outputs.revision }}
+          QUOTA_SESSION: ${{ github.run_id }}-${{ github.run_attempt }}
         run: |
           refresh_log="$RUNNER_TEMP/weather-refresh.log"
           retry_count=0
@@ -133,6 +134,7 @@ jobs:
             if [ -n "$CACHE_SAVED_KEY" ]; then
               echo "保存的断点：\`$CACHE_SAVED_KEY\`。"
             fi
+            echo "Open-Meteo 配额会话：\`${QUOTA_SESSION:-local}\`。"
             echo
             echo "Open-Meteo 网络重试：${retry_count:-0} 次；额度等待：${quota_wait_count:-0} 次；限流：${rate_limit_count:-0} 次。"
             [ "$county_checkpoint" = '未完成' ] || echo "- 县级：\`$county_checkpoint\`"

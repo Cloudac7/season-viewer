@@ -3,10 +3,10 @@ import {randomUUID} from 'node:crypto';
 import {OpenMeteoHttpError, OpenMeteoNetworkError} from '../src/lib/open-meteo';
 
 export type WeatherRequestKind = 'county'|'grid';
-export interface UsageEntry { key:string; at:number; cost:number }
+export interface UsageEntry { key:string; at:number; cost:number; session?:string }
 type Clock = () => number;
 type Sleep = (milliseconds:number) => Promise<void>;
-interface Options { directory?:URL; dataDirectory?:URL; now?:Clock; sleep?:Sleep; log?:(message:string)=>void }
+interface Options { directory?:URL; dataDirectory?:URL; now?:Clock; sleep?:Sleep; log?:(message:string)=>void; session?:string|null }
 const DAY = 24 * 60 * 60 * 1000;
 const HOUR = 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
@@ -33,6 +33,7 @@ export class OpenMeteoQuota {
   private readonly now:Clock;
   private readonly sleep:Sleep;
   private readonly log:(message:string)=>void;
+  private readonly session:string|null;
   private readonly usageFile:URL;
   private readonly backoffFile:URL;
 
@@ -40,6 +41,8 @@ export class OpenMeteoQuota {
     this.directory=options.directory??new URL('../data-sources/',import.meta.url);
     this.dataDirectory=options.dataDirectory??new URL('../public/data/',import.meta.url);
     this.now=options.now??Date.now; this.sleep=options.sleep??defaultSleep; this.log=options.log??console.log;
+    const configuredSession=options.session===undefined?process.env.OPEN_METEO_QUOTA_SESSION:options.session;
+    this.session=configuredSession?.trim()||null;
     this.usageFile=new URL('weather-grid-usage.json',this.directory);
     this.backoffFile=new URL('weather-grid-backoff.json',this.directory);
   }
@@ -58,9 +61,18 @@ export class OpenMeteoQuota {
     if(saved!==null&&!Array.isArray(saved))throw new Error('Invalid Open-Meteo usage ledger');
     const usage=new Map<string,UsageEntry>();
     for(const entry of saved??[]) {
-      if(!entry||typeof entry.key!=='string'||!Number.isFinite(entry.at)||!Number.isFinite(entry.cost)||entry.cost<=0)throw new Error('Invalid Open-Meteo usage ledger entry');
+      if(!entry||typeof entry.key!=='string'||!Number.isFinite(entry.at)||!Number.isFinite(entry.cost)||entry.cost<=0||entry.session!==undefined&&typeof entry.session!=='string')throw new Error('Invalid Open-Meteo usage ledger entry');
+      // A CI session represents a fresh runner and therefore a potentially
+      // different Open-Meteo egress IP. Entries from other runs must not be
+      // charged to it. Local runs without a session still enforce every recent
+      // entry, including scoped entries left by a previous process.
+      if(this.session!==null&&entry.session!==this.session)continue;
       if(entry.at>now-DAY)usage.set(entry.key,entry);
     }
+    // Scoped CI runs cannot infer calls from restored snapshots: those requests
+    // may have originated from another runner/IP, while the county and grid
+    // stages within this run already share the scoped ledger file.
+    if(this.session!==null)return [...usage.values()];
     // Recover recent successful batches when a runner starts without its cache.
     // Legacy ledgers have per-county and recovered-grid entries; retain them.
     const countyRequests:{at:number;remaining:number}[]=[],gridRequests:{at:number;remaining:number}[]=[];
@@ -90,15 +102,17 @@ export class OpenMeteoQuota {
     return [...usage.values()];
   }
   async checkBackoff():Promise<void> {
-    const saved=await this.readJson(this.backoffFile) as {until?:unknown}|null;
-    if(saved!==null&&(typeof saved.until!=='number'||!Number.isFinite(saved.until)))throw new Error('Invalid Open-Meteo backoff ledger');
-    if(saved&&typeof saved.until==='number'&&saved.until>this.now())throw new Error(`Open-Meteo rate-limit cooldown active until ${new Date(saved.until).toISOString()}`);
+    const saved=await this.readJson(this.backoffFile) as {until?:unknown;session?:unknown}|null;
+    if(saved!==null&&(typeof saved.until!=='number'||!Number.isFinite(saved.until)||saved.session!==undefined&&typeof saved.session!=='string'))throw new Error('Invalid Open-Meteo backoff ledger');
+    const applies=this.session===null||saved?.session===this.session;
+    if(applies&&saved&&typeof saved.until==='number'&&saved.until>this.now())throw new Error(`Open-Meteo rate-limit cooldown active until ${new Date(saved.until).toISOString()}`);
   }
   async recordRateLimit(retryAfter:string|null):Promise<number> {
-    const existing=await this.readJson(this.backoffFile) as {until?:unknown}|null;
+    const existing=await this.readJson(this.backoffFile) as {until?:unknown;session?:unknown}|null;
     const now=this.now();
-    const until=Math.max(rateLimitUntil(retryAfter,now),typeof existing?.until==='number'?existing.until:0);
-    await this.atomicJson(this.backoffFile,{until,reason:'Open-Meteo HTTP 429'});
+    const previous=this.session===null||existing?.session===this.session;
+    const until=Math.max(rateLimitUntil(retryAfter,now),previous&&typeof existing?.until==='number'?existing.until:0);
+    await this.atomicJson(this.backoffFile,{until,reason:'Open-Meteo HTTP 429',...(this.session===null?{}:{session:this.session})});
     return Math.max(0,until-now);
   }
   async reserve(kind:WeatherRequestKind,cost:number,locations?:number):Promise<void> {
@@ -111,7 +125,7 @@ export class OpenMeteoQuota {
       const minutely=entries.filter(entry=>entry.at>now-MINUTE).reduce((sum,entry)=>sum+entry.cost,0);
       if(daily+cost>9900)throw new Error(`Open-Meteo daily budget reserved (${daily.toFixed(1)} + ${cost.toFixed(1)} > 9900); checkpoint retained`);
       if(hourly+cost<=4900&&minutely+cost<=570) {
-        entries.push({key:`request:${kind}:${process.pid}:${now}:n${locations??Math.floor(cost/1.5)}:${randomUUID()}`,at:now,cost});
+        entries.push({key:`request:${kind}:${process.pid}:${now}:n${locations??Math.floor(cost/1.5)}:${randomUUID()}`,at:now,cost,...(this.session===null?{}:{session:this.session})});
         await this.atomicJson(this.usageFile,entries); return;
       }
       const window=hourly+cost>4900?HOUR:MINUTE;
@@ -126,7 +140,7 @@ export class OpenMeteoQuota {
     if(!Number.isFinite(cost)||cost<=0||cost>9900||!key.startsWith('external-reserve:'))throw new Error('Invalid external Open-Meteo reservation');
     const entries=await this.usage();
     if(entries.some(entry=>entry.key===key))return;
-    entries.push({key,at:this.now()-HOUR-1,cost});
+    entries.push({key,at:this.now()-HOUR-1,cost,...(this.session===null?{}:{session:this.session})});
     await this.atomicJson(this.usageFile,entries);
   }
 }

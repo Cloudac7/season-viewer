@@ -37,7 +37,7 @@ GitHub 原生 `schedule` 事件可能长时间延迟或跳过，因此生产定�
 npx wrangler secret put GITHUB_DISPATCH_TOKEN
 ```
 
-令牌只保存到 Cloudflare Secret，不能写入 `wrangler.jsonc`、GitHub Actions Secret 或仓库文件。可用 `npx wrangler tail season-atlas` 查看 Cron 调用与 GitHub API 错误。工作流从线上快照或上次运行的缓存恢复县级和格点历史、配额及限流状态，下载最新资料，完成预计算后部署并校验线上版本。下载失败时任务会尝试保存已完成的断点并停止部署；运行摘要列出缓存、更新、限流和部署状态，详细批次进度可在 Actions 日志查看。缓存被清理后，工作流会从当前线上快照重新接续。
+令牌只保存到 Cloudflare Secret，不能写入 `wrangler.jsonc`、GitHub Actions Secret 或仓库文件。可用 `npx wrangler tail season-atlas` 查看 Cron 调用与 GitHub API 错误。工作流从线上快照或上次运行的缓存恢复县级和格点历史，下载最新资料，完成预计算后部署并校验线上版本。天气断点缓存按运行保存，但 Open-Meteo 配额与 429 冷却不跨 runner 复用；每一轮以 `run_id-run_attempt` 建立独立会话，县、格点两个阶段在同轮内仍共用额度。下载失败时任务会尝试保存已完成的断点并停止部署；运行摘要列出缓存、配额会话、更新、限流和部署状态，详细批次进度可在 Actions 日志查看。缓存被清理后，工作流会从当前线上快照重新接续。
 
 启用前，在仓库 Settings → Secrets and variables → Actions 添加 `CLOUDFLARE_API_TOKEN`。可在 Cloudflare 创建限制到本项目账号和域名的 Workers 部署令牌，使用 **Edit Cloudflare Workers** 模板；令牌值只保存在 GitHub Secret，不要提交到仓库。工作流使用已配置的 Cloudflare 账号 ID。操作完成后在 Actions 中运行一次 **Refresh and deploy weather**，确认抓取和部署成功。
 
@@ -96,4 +96,4 @@ npx wrangler secret put GITHUB_DISPATCH_TOKEN
 
 尚未实现完整国家标准业务判定：没有 1991–2020 常年日温，未执行偏早二次判断、正式稳定通过和无冬/无夏校正。短历史会出现初始估计，春秋方向使用上/下半年辅助规则，不能替代官方入季结论。边界也不保证包含最新区划调整。
 
-Open-Meteo 免费接口用于非商业原型，调用配额按位置和时间跨度计入。更新器使用 POST 合并多坐标，每批最多 100 个代表点；二十一天冷启动窗口按每个位置 1.5 次调用计费，未超过十四天的增量窗口按 1 次计费。县级与格点共用保守的分钟、小时和每日额度账本，不会因两个独立进程而重复占用配额；正式使用应核对[现行许可与配额](https://open-meteo.com/en/pricing)。
+Open-Meteo 免费接口用于非商业原型，调用配额按位置和时间跨度计入。更新器使用 POST 合并多坐标，每批最多 100 个代表点；二十一天冷启动窗口按每个位置 1.5 次调用计费，未超过十四天的增量窗口按 1 次计费。县级与格点在同一轮内共用保守的分钟、小时和每日额度账本，不会因两个独立进程而重复占用配额。GitHub Actions 的运行器出口 IP 可能变化，因此跨轮缓存不会继承配额或限流账本，也不会用旧快照反推新 runner 的已用额度；正式使用应核对[现行许可与配额](https://open-meteo.com/en/pricing)。
