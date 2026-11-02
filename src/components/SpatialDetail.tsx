@@ -1,7 +1,7 @@
 import { Check, Grid3X3, Info, LoaderCircle, Mountain } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { SEASONS } from '../data';
-import { forecastIsFresh } from '../lib/forecast';
+import { forecastIsAvailable } from '../lib/forecast';
 import { transitionAppearance } from '../lib/map-status';
 import type { GridLocation } from '../lib/grid-location';
 import type { SpatialCell } from '../lib/spatial-field';
@@ -21,7 +21,7 @@ export default function SpatialDetail({ cell, date, loading, location }: Spatial
     '--status-fill': appearance.fill, '--status-color': appearance.color, '--status-pale': appearance.pale,
     backgroundColor: appearance.pale, color: appearance.color, borderColor: appearance.fill,
   } as CSSProperties);
-  const chartInput = cell ? [...cell.days, ...(forecastIsFresh(cell.forecast) ? cell.forecast!.days : [])] : [];
+  const chartInput = cell ? [...cell.days, ...(forecastIsAvailable(cell.forecast) ? cell.forecast!.days : [])] : [];
   return <section className="panel city-card county-detail spatial-detail" aria-busy={loading}>
     <div className="city-top"><div><span className="tiny-label">气温格点场 · OPEN-METEO + DEM</span><h3 title={title}><Grid3X3 size={18}/><span>{title}</span></h3><p className="county-breadcrumb">{cell ? `${cell.longitude.toFixed(2)}°E · ${cell.latitude.toFixed(2)}°N · WGS84 · 格点估算${location?.kind === 'province' ? ' · 省级定位' : ''}` : '点击地图查看当地的季节与日温'}</p></div></div>
     {loading && <p className="spatial-detail-loading" role="status"><LoaderCircle size={14}/>正在载入气温图…</p>}

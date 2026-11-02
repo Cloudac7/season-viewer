@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addDays, classifyCity } from './season';
-import { forecastIsFresh, projectTransition } from './forecast';
+import { forecastIsAvailable, forecastIsFresh, projectTransition } from './forecast';
 import type { TemperatureForecast } from './forecast';
 import type { City } from '../types';
 
@@ -23,7 +23,7 @@ test('projection ignores a transition that begins wholly in the forecast',()=>{
   assert.equal(projectTransition(state,forecast(),'2026-10-10',now),null);
   assert.equal(projectTransition(state,forecast(Array(7).fill(23)),'2026-10-10',now),null);
 });
-test('projection retains the latest forecast across midnight within its retrieval window',()=>{
+test('display retains the latest forecast until a replacement snapshot is published',()=>{
   assert.equal(forecastIsFresh(forecast(),now),true);
   assert.equal(forecastIsFresh({...forecast(),issuedAt:'2026-10-10T00:00:00Z'},now),false);
   assert.equal(forecastIsFresh({...forecast(),issuedAt:'2026-10-11T05:00:00Z'},now),false);
@@ -31,7 +31,11 @@ test('projection retains the latest forecast across midnight within its retrieva
   assert.equal(forecastIsFresh(forecast(),afterMidnight),true);
   assert.deepEqual(projectTransition(pending(),forecast(),'2026-10-10',afterMidnight),{target:'autumn',expectedDate:'2026-10-11',forecastDays:1,issuedAt:'2026-10-11T00:00:00Z'});
   assert.equal(projectTransition(pending(),forecast(),'2026-10-09',now),null);
-  assert.equal(projectTransition(pending(),forecast(),'2026-10-10',new Date('2026-10-12T00:00:00Z')),null);
+  const afterRetrievalWindow=new Date('2026-10-14T00:00:00Z');
+  assert.equal(forecastIsFresh(forecast(),afterRetrievalWindow),false);
+  assert.equal(forecastIsAvailable(forecast(),afterRetrievalWindow),true);
+  assert.deepEqual(projectTransition(pending(),forecast(),'2026-10-10',afterRetrievalWindow),{target:'autumn',expectedDate:'2026-10-11',forecastDays:1,issuedAt:'2026-10-11T00:00:00Z'});
+  assert.equal(forecastIsAvailable({...forecast(),issuedAt:'2026-10-11T05:00:00Z'},now),false);
 });
 test('forecast freshness requires seven consecutive finite temperatures in the supported range',()=>{
   for(const invalid of [null,NaN,Infinity,-101,66]){

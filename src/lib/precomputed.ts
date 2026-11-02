@@ -10,7 +10,7 @@ import type {TerrainGrid} from './terrain';
 export interface PrecomputedFrame {
   field:string; meta:string; counties:string; layers:string; expiredLayers?:string;
   readyCount:number; forecastCount:number; countyReadyCount:number; countyCompleteCount:number; countyForecastCount:number;
-  /** Earliest retrieval-age expiry among the source forecasts. */
+  /** Source-age diagnostic; display retains this published frame until replacement. */
   forecastValidUntil:string|null;
 }
 export interface PrecomputedManifest {
@@ -59,8 +59,10 @@ export function expireSpatialForecast(field:SpatialFieldResult):SpatialFieldResu
   }
   return {...field,status,targets,expectedDays,metadata:{...field.metadata,forecastCells:0,pendingCells}};
 }
-export function precomputedForecastFresh(manifest:PrecomputedManifest,frame:PrecomputedFrame,now=new Date()):boolean {
-  return !!manifest&&!!frame.forecastValidUntil&&now.getTime()<Date.parse(frame.forecastValidUntil);
+export function precomputedForecastAvailable(manifest:PrecomputedManifest,frame:PrecomputedFrame):boolean {
+  // The manifest changes only after a complete replacement publication. Keep
+  // the forecast carried by the current frame until that publication arrives.
+  return !!manifest&&frame.forecastCount>0;
 }
 export function validPrecomputedManifest(value:unknown):value is PrecomputedManifest {
   if(!value||typeof value!=='object')return false;const v=value as PrecomputedManifest;
@@ -115,13 +117,13 @@ export function packCountyReadings(date:string,readings:CountyReading[],summarie
       return {id:reading.unit.id,status:reading.status,state:reading.state?state as SavedState:null,forecastTransition:reading.forecastTransition,updatedAt:reading.series?.updatedAt??null,forecastValidUntil:Number.isFinite(expiry)?new Date(expiry).toISOString():null};
   }),summaries:summaries.map(({readings:_,ready:__,...summary})=>summary)};
 }
-export function unpackCountyReadings(saved:PrecomputedCounties,units:CountyUnit[],now=new Date()):CountyReading[] {
+export function unpackCountyReadings(saved:PrecomputedCounties,units:CountyUnit[]):CountyReading[] {
   const byId=new Map(saved.readings.map(reading=>[reading.id,reading]));
   return units.map(unit=>{
     const row=byId.get(unit.id),state=row?.state?{...row.state,city:{id:unit.id,name:unit.name,province:unit.province,code:unit.provinceCode,region:unit.region,lat:unit.lat,lon:unit.lon,annual:0,amplitude:0},history:[],averages:[]}:null;
     const series:CountySeries|null=row?.updatedAt?{lon:unit.lon,lat:unit.lat,updatedAt:row.updatedAt,days:[]}:null;
-    const liveForecast=!!row?.forecastValidUntil&&now.getTime()<Date.parse(row.forecastValidUntil)&&!!state?.transition&&row.forecastTransition?.target===state.transition.target;
-    return {unit,state,series,status:row?.status??'missing',forecastTransition:liveForecast?row!.forecastTransition:null};
+    const publishedForecast=!!state?.transition&&row?.forecastTransition?.target===state.transition.target;
+    return {unit,state,series,status:row?.status??'missing',forecastTransition:publishedForecast?row!.forecastTransition:null};
   });
 }
 

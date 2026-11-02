@@ -2,7 +2,7 @@ import {Crosshair,Info,MapPin,Check} from 'lucide-react';
 import type {CSSProperties} from 'react';
 import type {CountyReading} from '../lib/counties';
 import {countyHistoricalDays} from '../lib/counties';
-import {forecastIsFresh} from '../lib/forecast';
+import {forecastIsAvailable} from '../lib/forecast';
 import {transitionAppearance} from '../lib/map-status';
 import {SEASONS} from '../data';
 import SeasonIcon from './SeasonIcon';
@@ -14,7 +14,7 @@ export default function CountyDetail({reading,date,onLocate}:{reading:CountyRead
   const pendingAppearance=state?transitionAppearance(state):null,forecastAppearance=state&&forecastTransition?transitionAppearance(state,forecastTransition):null;
   const progressAppearance=forecastAppearance??pendingAppearance;
   const statusStyle=(appearance:NonNullable<typeof pendingAppearance>):CSSProperties=>({'--status-fill':appearance.fill,'--status-color':appearance.color,'--status-pale':appearance.pale,backgroundColor:appearance.pale,color:appearance.color,borderColor:appearance.fill} as CSSProperties);
-  const chartInput=series?[...countyHistoricalDays(series),...(forecastIsFresh(series.forecast)?series.forecast!.days:[])]:[];
+  const chartInput=series?[...countyHistoricalDays(series),...(forecastIsAvailable(series.forecast)?series.forecast!.days:[])]:[];
   return <section className="panel city-card county-detail">
     <div className="city-top"><div><span className="tiny-label">县级代表点 · OPEN-METEO</span><h3><MapPin size={18}/>{unit.name}</h3><p className="county-breadcrumb">{unit.province}{unit.city!==unit.province?` · ${unit.city}`:''} · {unit.id}</p></div><button className="county-locate" onClick={()=>onLocate(unit.id)} aria-label={`定位${unit.name}`}><Crosshair size={17}/></button></div>
     {state&&season?<>

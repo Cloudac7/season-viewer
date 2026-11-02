@@ -4,7 +4,7 @@ import { gridHistoricalDays } from './spatial-grid';
 import type { TerrainGrid } from './terrain';
 import { sampleTerrain } from './terrain';
 import type { ForecastTransition, TemperatureForecast } from './forecast';
-import { forecastIsFresh, projectTransition } from './forecast';
+import { forecastIsAvailable, projectTransition } from './forecast';
 import { addDays, classifyCity } from './season';
 
 /** Fixed environmental lapse rate, an approximation rather than a local sounding. */
@@ -122,7 +122,7 @@ function prepareQuad(ctx: Context, row: number, col: number): PreparedQuad | nul
   for (let day = start; day <= end; day = addDays(day, 1)) dates.push(day);
   const history = new Float64Array(dates.length * 4);
   dates.forEach((day, i) => history.set(seaLevel(maps.map(map => map.get(day)), corners), i * 4));
-  const completeForecast = corners.every(record => forecastIsFresh(record.forecast, ctx.now));
+  const completeForecast = corners.every(record => forecastIsAvailable(record.forecast, ctx.now));
   let forecast: Float64Array | null = null;
   const forecastDates: string[] = [];
   let issuedAt: string | null = null;

@@ -10,18 +10,18 @@ import type {PrecomputedCounties,PrecomputedManifest} from './precomputed';
 export function useCounties(date:string){
   const [catalog,setCatalog]=useState<CountyCatalog|null>(null),[boundaries,setBoundaries]=useState<CountyBoundaries|null>(null);
   const [manifest,setManifest]=useState<PrecomputedManifest|null>(null),[saved,setSaved]=useState<PrecomputedCounties|null>(null);
-  const [loading,setLoading]=useState(true),[error,setError]=useState(''),[hasUpdater,setHasUpdater]=useState(false),[clock,setClock]=useState(()=>Date.now());
+  const [loading,setLoading]=useState(true),[error,setError]=useState(''),[hasUpdater,setHasUpdater]=useState(false);
   const mounted=useRef(true),errorRef=useRef('');
   const [retryRevision,setRetryRevision]=useState(0);
   useEffect(()=>{errorRef.current=error;},[error]);
   const refresh=useCallback(async(forceAssets=true)=>{
     if(forceAssets||errorRef.current)setRetryRevision(value=>value+1);
-    try{const result=await fetchPrecomputedManifest(true);if(mounted.current){setManifest(previous=>previous?.revision===result.manifest.revision?previous:result.manifest);setHasUpdater(result.hasUpdater);setClock(Date.now());setError('');}}
+    try{const result=await fetchPrecomputedManifest(true);if(mounted.current){setManifest(previous=>previous?.revision===result.manifest.revision?previous:result.manifest);setHasUpdater(result.hasUpdater);setError('');}}
     catch(error){if(mounted.current){setLoading(false);setError(error instanceof Error?error.message:'预计算县级统计加载失败');}}
   },[]);
   useEffect(()=>{
     mounted.current=true;
-    void fetchPrecomputedManifest().then(result=>{if(mounted.current){setManifest(result.manifest);setHasUpdater(result.hasUpdater);setClock(Date.now());}}).catch(error=>{if(mounted.current){setLoading(false);setError(error instanceof Error?error.message:'县级发布索引加载失败');}});
+    void fetchPrecomputedManifest().then(result=>{if(mounted.current){setManifest(result.manifest);setHasUpdater(result.hasUpdater);}}).catch(error=>{if(mounted.current){setLoading(false);setError(error instanceof Error?error.message:'县级发布索引加载失败');}});
     return()=>{mounted.current=false;};
   },[]);
   // A temporarily unavailable manifest must not discard successfully loaded geography.
@@ -40,15 +40,7 @@ export function useCounties(date:string){
     void fetchPrecomputedAsset<PrecomputedCounties>(frame.counties).then(value=>{if(active){setSaved(value);setLoading(false);setError('');}}).catch(error=>{if(active){setLoading(false);setError(error instanceof Error?error.message:'县级日期统计加载失败');}});
     return()=>{active=false;};
   },[frame,manifest,retryRevision]);
-  useEffect(()=>{
-    const check=()=>setClock(Date.now());
-    const expiry=saved?.readings.map(reading=>Date.parse(reading.forecastValidUntil??'')).filter(value=>value>clock)??[];
-    const deadline=expiry.length?Math.min(...expiry):NaN;
-    const delay=Number.isFinite(deadline)?Math.max(20,deadline-Date.now()+20):3600000;
-    const timer=setTimeout(check,delay);document.addEventListener('visibilitychange',check);
-    return()=>{clearTimeout(timer);document.removeEventListener('visibilitychange',check);};
-  },[clock,saved]);
-  const readings=useMemo(()=>catalog&&saved?.date===date?unpackCountyReadings(saved,catalog.units,new Date(clock)):[],[catalog,saved,date,clock]);
+  const readings=useMemo(()=>catalog&&saved?.date===date?unpackCountyReadings(saved,catalog.units):[],[catalog,saved,date]);
   const ready=useMemo(()=>readings.filter(reading=>reading.state!==null),[readings]);
   const data=useMemo(()=>({...EMPTY_COUNTY_WEATHER,updatedAt:manifest?.counties.updatedAt??null,records:Object.fromEntries(readings.filter(reading=>reading.series).map(reading=>[reading.unit.id,reading.series!]))}),[readings,manifest]);
   const summaries=useMemo<PrefectureSummary[]>(()=>{
