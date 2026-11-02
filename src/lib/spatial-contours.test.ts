@@ -48,14 +48,13 @@ function contains(path: string, point: number[]): boolean {
 const projection = geoMercator().center([104.5, 36.5]).scale(610).translate([420, 271]);
 const pointAt = (field: SpatialFieldResult, index: number) => projection(wgsToGcj(field.bounds.west + index % field.cols * field.step, field.bounds.south + Math.floor(index / field.cols) * field.step))!;
 
-test('categorical vector smoothing preserves every sample class, including four-class junctions', () => {
+test('categorical contours share the full-resolution isotherm grid without square covers', () => {
   const field = fixture(), assets = generateSpatialContours(field);
-  assert.ok(assets.layers.some(layer => layer.kind === 'season' && layer.path.includes('Q')));
   field.seasons.forEach((seasonIndex, index) => {
     const containing = assets.layers.filter(layer => layer.kind === 'season' && contains(layer.path, pointAt(field, index)));
     assert.deepEqual(containing.map(layer => layer.season), [SPATIAL_SEASONS[seasonIndex]], `sample ${index}`);
   });
-  assert.ok(assets.layers.filter(layer => layer.kind === 'season').every(layer => layer.underlayPath));
+  assert.ok(assets.layers.filter(layer => layer.kind === 'season').every(layer => !layer.underlayPath));
 });
 
 test('validity clip keeps an interior data hole empty despite neighboring smooth surfaces', () => {

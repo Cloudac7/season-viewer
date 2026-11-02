@@ -40,40 +40,24 @@ export function temperatureLayerPaintOrder(layers: readonly SpatialContourLayer[
 
 /** Shared with CountyMap. Assets are generated at deploy time, never in React. */
 export const SPATIAL_CONTOUR_PROJECTION = 'season-atlas-mercator-v1';
-const ROUNDING_RADIUS = 0.12;
 type Point = [number, number];
 
 function rounded(value: number): string { return String(Math.round(value * 100) / 100); }
 
-/**
- * Keeps the isopleth in its original narrow grid-edge corridor. The maximum
- * corner cut is 0.12 grid units; all data nodes are at least sqrt(1/8) away.
- * Reversing a shared boundary produces the same quadratic curve.
- */
-function ringPath(ring: Position[], project: (point: Point) => Point, smooth: boolean, roundCoordinates = true): string {
+function ringPath(ring: Position[], project: (point: Point) => Point, roundCoordinates = true): string {
   let points = ring.slice(0, -1).map(point => [point[0], point[1]] as Point);
   if (points.length < 3) return '';
   // Preserve the marching-squares vertices. Even apparently collinear points
   // can be topology junctions in self-touching rings around missing data.
   const coordinate = (point: Point) => project(point).map(value => roundCoordinates ? rounded(value) : String(value)).join(' ');
-  if (!smooth) return `M${points.map(coordinate).join('L')}Z`;
-  const cuts = points.map((point, index, all) => {
-    const previous = all[(index + all.length - 1) % all.length], next = all[(index + 1) % all.length];
-    const before = Math.hypot(point[0] - previous[0], point[1] - previous[1]);
-    const after = Math.hypot(next[0] - point[0], next[1] - point[1]);
-    const radius = Math.min(ROUNDING_RADIUS, before / 4, after / 4);
-    const incoming: Point = [point[0] + (previous[0] - point[0]) * radius / before, point[1] + (previous[1] - point[1]) * radius / before];
-    const outgoing: Point = [point[0] + (next[0] - point[0]) * radius / after, point[1] + (next[1] - point[1]) * radius / after];
-    return { point, incoming, outgoing };
-  });
-  return `M${coordinate(cuts[0].incoming)}${cuts.map((cut, index) => `${index ? `L${coordinate(cut.incoming)}` : ''}Q${coordinate(cut.point)} ${coordinate(cut.outgoing)}`).join('')}Z`;
+  return `M${points.map(coordinate).join('L')}Z`;
 }
 
-function geometryPath(geometry: MultiPolygon, project: (point: Point) => Point, smooth = true, roundCoordinates = true): string {
-  return geometry.coordinates.map(polygon => polygon.map(ring => ringPath(ring, project, smooth, roundCoordinates)).join('')).join('');
+function geometryPath(geometry: MultiPolygon, project: (point: Point) => Point, roundCoordinates = true): string {
+  return geometry.coordinates.map(polygon => polygon.map(ring => ringPath(ring, project, roundCoordinates)).join('')).join('');
 }
 
-/** Retain a categorical cover at three/four-class junctions; never fill a hole. */
+/** Build compact cell runs for the temperature edge fallback; never fill a hole. */
 function rowRunsPath(mask: Uint8Array, rows: number, cols: number, project: (point: Point) => Point): string {
   const segments: string[] = [];
   for (let row = 0; row < rows; row++) {
@@ -102,7 +86,7 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
   const project = ([x, y]: Point): Point => projection(wgsToGcj(field.bounds.west + (x - 0.5) * field.step, field.bounds.south + (y - 0.5) * field.step))!;
   const contour = contours().size([cols, rows]).smooth(true);
   const valid = Uint8Array.from(field.seasons, (season, index) => Number(season >= 0 && season < SPATIAL_SEASONS.length && Number.isFinite(field.average[index])));
-  const validPath = geometryPath(contour.thresholds([0.5])(Array.from(valid))[0], project, false);
+  const validPath = geometryPath(contour.thresholds([0.5])(Array.from(valid))[0], project);
   // Isotherm rings can terminate at the edge of their finite grid. A one-cell
   // fallback along valid-data edges preserves exact sampled colors and is
   // painted above the interpolated contours.
@@ -116,10 +100,10 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
   const addMask = (layer: Omit<SpatialContourLayer, 'path' | 'underlayPath'>, predicate: (index: number) => boolean) => {
     const mask = Uint8Array.from(valid, (present, index) => Number(!!present && predicate(index)));
     if (!mask.some(Boolean)) return;
-    layers.push({ ...layer, path: geometryPath(contour.thresholds([0.5])(Array.from(mask))[0], project),
-      // Transition masks already have the complete seasonal base underneath;
-      // a square transition cover would reintroduce its original pixel steps.
-      ...(layer.kind === 'season' ? { underlayPath: rowRunsPath(mask, rows, cols, project) } : {}) });
+    // Use the same full-resolution marching-squares vertices as temperature.
+    // The previous square cell cover and second corner-rounding pass made the
+    // categorical boundary visibly coarser than the rolling-mean isotherms.
+    layers.push({ ...layer, path: geometryPath(contour.thresholds([0.5])(Array.from(mask))[0], project, false) });
   };
   SPATIAL_SEASONS.forEach((season, seasonIndex) => addMask({ key: `season:${season}`, kind: 'season', season, fill: SEASONS[season].fill }, index => field.seasons[index] === seasonIndex));
   SPATIAL_SEASONS.forEach((season, seasonIndex) => SPATIAL_SEASONS.forEach((target, targetIndex) => {
@@ -141,9 +125,9 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
       // True continuous threshold interpolation already removes pixel steps.
       // Do not round these vertices: an isotherm can lie arbitrarily close to
       // a node whose value is just above/below a band boundary.
-      layers.push({ key: `temperature:${threshold}`, kind: 'temperature', minimum: threshold, fill: TEMPERATURE_BANDS[index + 1].fill, path: surface.coordinates.length ? geometryPath(surface, project, false, false) : '', ...(underlayPath ? { underlayPath } : {}) });
+      layers.push({ key: `temperature:${threshold}`, kind: 'temperature', minimum: threshold, fill: TEMPERATURE_BANDS[index + 1].fill, path: surface.coordinates.length ? geometryPath(surface, project, false) : '', ...(underlayPath ? { underlayPath } : {}) });
     });
   }
   return { version: 1, projection: SPATIAL_CONTOUR_PROJECTION, validPath, layers,
-    note: '部署时生成平滑矢量分级面。季节按独立类别掩膜描边，颜色不插值；均温按连续气温等值面分档。曲线最多在 0.12 个显示格距内修圆，边界为显示近似，点击读数仍使用原始格点；缺测区域保持空缺。' };
+    note: '部署时生成平滑矢量分级面。季节按独立类别掩膜描边，颜色不插值；均温按连续气温等值面分档。两类图层使用同一套 0.1° 轮廓网格和完整顶点，边界为显示近似，点击读数仍使用原始格点；缺测区域保持空缺。' };
 }
