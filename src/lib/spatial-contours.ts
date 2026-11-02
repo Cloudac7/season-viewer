@@ -44,6 +44,45 @@ type Point = [number, number];
 
 function rounded(value: number): string { return String(Math.round(value * 100) / 100); }
 
+/**
+ * A single 0.1° terrain cell occupies only a few device pixels on the national
+ * map. Marching-squares smoothing turns such cells into conspicuous diamonds.
+ * Apply a cartographic minimum area without changing either the underlying
+ * grid classification or the rendered category colors.
+ */
+const MIN_MAPPED_CATEGORY_CELLS = 8;
+
+function removeSmallComponents(mask: Uint8Array, rows: number, cols: number, minimumCells = MIN_MAPPED_CATEGORY_CELLS): Uint8Array {
+  const result = mask.slice(), visited = new Uint8Array(mask.length), queue = new Int32Array(mask.length), component = new Int32Array(mask.length);
+  for (let start = 0; start < mask.length; start++) {
+    if (!mask[start] || visited[start]) continue;
+    let head = 0, tail = 0, size = 0;
+    queue[tail++] = start;
+    visited[start] = 1;
+    while (head < tail) {
+      const index = queue[head++], row = Math.floor(index / cols), col = index % cols;
+      component[size++] = index;
+      for (let dr = -1; dr <= 1; dr++) {
+        const nextRow = row + dr;
+        if (nextRow < 0 || nextRow >= rows) continue;
+        for (let dc = -1; dc <= 1; dc++) {
+          const nextCol = col + dc;
+          if ((dr === 0 && dc === 0) || nextCol < 0 || nextCol >= cols) continue;
+          const next = nextRow * cols + nextCol;
+          if (!visited[next] && mask[next]) {
+            visited[next] = 1;
+            queue[tail++] = next;
+          }
+        }
+      }
+    }
+    if (size < minimumCells) {
+      for (let index = 0; index < size; index++) result[component[index]] = 0;
+    }
+  }
+  return result;
+}
+
 function ringPath(ring: Position[], project: (point: Point) => Point, roundCoordinates = true): string {
   let points = ring.slice(0, -1).map(point => [point[0], point[1]] as Point);
   if (points.length < 3) return '';
@@ -98,7 +137,11 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
   });
   const layers: SpatialContourLayer[] = [];
   const addMask = (layer: Omit<SpatialContourLayer, 'path' | 'underlayPath'>, predicate: (index: number) => boolean) => {
-    const mask = Uint8Array.from(valid, (present, index) => Number(!!present && predicate(index)));
+    const mask = removeSmallComponents(
+      Uint8Array.from(valid, (present, index) => Number(!!present && predicate(index))),
+      rows,
+      cols,
+    );
     if (!mask.some(Boolean)) return;
     // Use the same full-resolution marching-squares vertices as temperature.
     // The previous square cell cover and second corner-rounding pass made the
@@ -129,5 +172,5 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
     });
   }
   return { version: 1, projection: SPATIAL_CONTOUR_PROJECTION, validPath, layers,
-    note: '部署时生成平滑矢量分级面。季节按独立类别掩膜描边，颜色不插值；均温按连续气温等值面分档。两类图层使用同一套 0.1° 轮廓网格和完整顶点，边界为显示近似，点击读数仍使用原始格点；缺测区域保持空缺。' };
+    note: `部署时生成平滑矢量分级面。季节与换季按独立类别掩膜描边，颜色不插值，并省略小于 ${MIN_MAPPED_CATEGORY_CELLS} 个 0.1° 显示格的孤立类别碎斑；均温按连续气温等值面分档。各类图层使用同一套轮廓网格和完整顶点，边界为显示近似，点击读数仍使用原始格点；缺测区域保持空缺。` };
 }

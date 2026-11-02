@@ -16,6 +16,19 @@ function fixture(): SpatialFieldResult {
       terrainSource: { name: 'Test DEM', url: '', documentation: '', attribution: '', retrievedAt: '', crs: 'EPSG:4326', sourceZoom: 6, resampling: 'test', note: '' }, evaluatedAt: '2026-10-26T00:00:00Z', validCells: size, missingCells: 0, pendingCells: 0, forecastCells: 0, note: '' } };
 }
 
+function categoricalFixture(): SpatialFieldResult {
+  const rows = 10, cols = 10, size = rows * cols, base = fixture();
+  return {
+    ...base,
+    bounds: { west: 100, east: 100.9, south: 30, north: 30.9 }, step: 0.1, rows, cols, date: '2026-10-25',
+    seasons: Int8Array.from({ length: size }, (_, index) => Math.floor(index / cols) < rows / 2 ? index % cols < cols / 2 ? 0 : 1 : index % cols < cols / 2 ? 2 : 3),
+    targets: new Int8Array(size).fill(-1),
+    average: Float32Array.from({ length: size }, (_, index) => 4.9 + index * 0.21),
+    temperature: new Float32Array(size), status: new Uint8Array(size), expectedDays: new Int8Array(size), transitionDays: new Uint8Array(size), estimated: new Uint8Array(size),
+    metadata: { ...base.metadata, validCells: size },
+  };
+}
+
 /** Read emitted SVG geometry, including quadratic arcs, as a browser fill would. */
 function contains(path: string, point: number[]): boolean {
   const tokens = path.match(/[MLQZ]|-?\d+(?:\.\d+)?/g) ?? [];
@@ -49,7 +62,7 @@ const projection = geoMercator().center([104.5, 36.5]).scale(610).translate([420
 const pointAt = (field: SpatialFieldResult, index: number) => projection(wgsToGcj(field.bounds.west + index % field.cols * field.step, field.bounds.south + Math.floor(index / field.cols) * field.step))!;
 
 test('categorical contours share the full-resolution isotherm grid without square covers', () => {
-  const field = fixture(), assets = generateSpatialContours(field);
+  const field = categoricalFixture(), assets = generateSpatialContours(field);
   field.seasons.forEach((seasonIndex, index) => {
     const containing = assets.layers.filter(layer => layer.kind === 'season' && contains(layer.path, pointAt(field, index)));
     assert.deepEqual(containing.map(layer => layer.season), [SPATIAL_SEASONS[seasonIndex]], `sample ${index}`);
@@ -111,9 +124,17 @@ test('temperature edge fallback covers valid cells beside missing-data gaps', ()
 });
 
 test('pending and forecast masks stay distinct, while a wholly missing frame has no fills', () => {
-  const field = fixture();
-  field.status[1] = 1; field.targets[1] = 1;
-  field.status[2] = 2; field.targets[2] = 2;
+  const field = categoricalFixture();
+  for (let row = 2; row < 6; row++) {
+    for (let col = 2; col < 5; col++) {
+      const index = row * field.cols + col;
+      field.status[index] = 1; field.targets[index] = 2;
+    }
+    for (let col = 5; col < 8; col++) {
+      const index = row * field.cols + col;
+      field.status[index] = 2; field.targets[index] = 2;
+    }
+  }
   const layers = generateSpatialContours(field).layers.filter(layer => layer.kind === 'transition');
   assert.deepEqual(layers.map(layer => layer.status).sort(), [1, 2]);
   assert.notEqual(layers[0].fill, layers[1].fill);
@@ -121,4 +142,23 @@ test('pending and forecast masks stay distinct, while a wholly missing frame has
   const missing = generateSpatialContours(field);
   assert.equal(missing.validPath, '');
   assert.equal(missing.layers.length, 0);
+});
+
+test('cartographic cleanup removes isolated categorical diamonds without hiding coherent regions', () => {
+  const field = categoricalFixture();
+  for (let row = 1; row < 5; row++) {
+    for (let col = 1; col < 5; col++) {
+      const index = row * field.cols + col;
+      field.status[index] = 1; field.targets[index] = 2;
+    }
+  }
+  const noise = field.seasons.length - 1;
+  field.status[noise] = 1; field.targets[noise] = 2;
+  const assets = generateSpatialContours(field), transitions = assets.layers.filter(layer => layer.kind === 'transition');
+  assert.equal(transitions.length, 1);
+  assert.equal(contains(transitions[0].path, pointAt(field, noise)), false);
+  assert.equal(contains(transitions[0].path, pointAt(field, 2 * field.cols + 2)), true);
+  for (const season of SPATIAL_SEASONS) {
+    assert.equal(assets.layers.filter(layer => layer.kind === 'season' && layer.season === season).length, 1);
+  }
 });
