@@ -3,7 +3,6 @@ import {feature} from 'topojson-client';
 import type {Topology,GeometryCollection} from 'topojson-specification';
 import {EMPTY_COUNTY_WEATHER} from './counties';
 import type {CountyBoundaries,CountyCatalog,PrefectureSummary} from './counties';
-import {addDays,beijingDate} from './season';
 import {fetchPrecomputedAsset,fetchPrecomputedManifest,unpackCountyReadings} from './precomputed';
 import type {PrecomputedCounties,PrecomputedManifest} from './precomputed';
 
@@ -42,10 +41,11 @@ export function useCounties(date:string){
     return()=>{active=false;};
   },[frame,manifest,retryRevision]);
   useEffect(()=>{
-    const check=()=>setClock(Date.now()),today=beijingDate(new Date(clock));
+    const check=()=>setClock(Date.now());
     const expiry=saved?.readings.map(reading=>Date.parse(reading.forecastValidUntil??'')).filter(value=>value>clock)??[];
-    const deadline=Math.min(Date.parse(`${addDays(today,1)}T00:00:00+08:00`),...expiry);
-    const timer=setTimeout(check,Math.max(20,deadline-Date.now()+20));document.addEventListener('visibilitychange',check);
+    const deadline=expiry.length?Math.min(...expiry):NaN;
+    const delay=Number.isFinite(deadline)?Math.max(20,deadline-Date.now()+20):3600000;
+    const timer=setTimeout(check,delay);document.addEventListener('visibilitychange',check);
     return()=>{clearTimeout(timer);document.removeEventListener('visibilitychange',check);};
   },[clock,saved]);
   const readings=useMemo(()=>catalog&&saved?.date===date?unpackCountyReadings(saved,catalog.units,new Date(clock)):[],[catalog,saved,date,clock]);
@@ -56,6 +56,6 @@ export function useCounties(date:string){
     for(const reading of readings){const id=String(reading.unit.cityCode);if(!groups.has(id))groups.set(id,[]);groups.get(id)!.push(reading);}
     return saved.summaries.map(summary=>{const group=groups.get(summary.id)??[];return {...summary,readings:group,ready:group.filter(reading=>reading.state!==null),transitionCount:group.filter(reading=>reading.state?.transition).length,forecastCount:group.filter(reading=>reading.state?.transition&&reading.forecastTransition?.target===reading.state.transition.target).length};});
   },[saved,readings,date]);
-  const forecastCount=manifest?.evaluatedDay===beijingDate(new Date(clock))?(frame?.countyForecastCount??0):0;
+  const forecastCount=readings.filter(reading=>reading.forecastTransition).length;
   return {catalog,boundaries,data,readings,ready,summaries,completeCount:frame?.countyCompleteCount??0,forecastCount,firstUsableDate:manifest?.firstUsableDate??'',availableDates:manifest?.dates??[],loading,error,refresh,hasUpdater};
 }

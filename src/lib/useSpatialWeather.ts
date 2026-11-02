@@ -8,7 +8,6 @@ import type {GridLocations} from './grid-location';
 import {lookupGridLocation} from './grid-location';
 import {decodeSpatialField,expireSpatialForecast,fetchPrecomputedAsset,fetchPrecomputedManifest,precomputedForecastFresh,readSelectedCell,restoreDetails} from './precomputed';
 import type {PrecomputedDetails,PrecomputedManifest,SpatialFieldMeta} from './precomputed';
-import {addDays,beijingDate} from './season';
 
 export interface SpatialWeatherState {
   /** Source data is compact and used only for one clicked point, never a national worker. */
@@ -44,9 +43,10 @@ export function useSpatialWeather(date:string):SpatialWeatherState {
   useEffect(()=>{const timer=setInterval(()=>void refresh(false),!manifest?10000:hasUpdater?30000:3600000);return()=>clearInterval(timer);},[hasUpdater,manifest,refresh]);
   const frame=manifest?.frames[date],fresh=!!manifest&&!!frame&&precomputedForecastFresh(manifest,frame,new Date(clock));
   useEffect(()=>{
-    const check=()=>setClock(Date.now()),today=beijingDate(new Date(clock));
-    const deadline=Math.min(Date.parse(`${addDays(today,1)}T00:00:00+08:00`),frame?.forecastValidUntil&&Date.parse(frame.forecastValidUntil)>clock?Date.parse(frame.forecastValidUntil):Infinity);
-    const timer=setTimeout(check,Math.max(20,deadline-Date.now()+20));document.addEventListener('visibilitychange',check);
+    const check=()=>setClock(Date.now());
+    const deadline=frame?.forecastValidUntil?Date.parse(frame.forecastValidUntil):NaN;
+    const delay=Number.isFinite(deadline)?Math.max(20,deadline-Date.now()+20):3600000;
+    const timer=setTimeout(check,delay);document.addEventListener('visibilitychange',check);
     return()=>{clearTimeout(timer);document.removeEventListener('visibilitychange',check);};
   },[clock,frame?.forecastValidUntil]);
   useEffect(()=>{

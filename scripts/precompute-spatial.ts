@@ -12,6 +12,7 @@ import {gridForecastIsFresh,gridHistoricalDays,validGridCatalog,validGridWeather
 import {validateTerrainGrid} from '../src/lib/terrain';
 import {compactDetails,encodeSpatialField,expireSpatialForecast,fieldMeta,packCountyReadings,validPrecomputedManifest} from '../src/lib/precomputed';
 import type {PrecomputedManifest} from '../src/lib/precomputed';
+import {forecastExpiry} from '../src/lib/forecast';
 import {buildGridLocations} from '../src/lib/grid-location';
 import type {ProvinceBoundaries} from '../src/lib/grid-location';
 import {acquireWeatherUpdateLock} from './weather-update-lock';
@@ -81,8 +82,8 @@ async function precomputeSpatialLocked(options:{force?:boolean;quiet?:boolean}):
   const forecastCount=catalog.nodes.filter(node=>gridForecastIsFresh(weather.records[node.id],now)).length;
   const countyCompleteCount=countyCatalog.units.filter(unit=>{const series=countySnapshot.records[unit.id];return series&&countyHistoricalDays(series).some(day=>day.date===addDays(today,-1)&&day.mean!==null);}).length;
   const countyForecastCount=countyCatalog.units.filter(unit=>countyForecastIsFresh(countySnapshot.records[unit.id],now)).length;
-  const expiries=Object.values(weather.records).filter(series=>gridForecastIsFresh(series,now)).map(series=>Date.parse(series.forecast.issuedAt)+86400000);
-  const forecastValidUntil=expiries.length?new Date(Math.min(Date.parse(`${addDays(today,1)}T00:00:00+08:00`),...expiries)).toISOString():null;
+  const expiries=Object.values(weather.records).filter(series=>gridForecastIsFresh(series,now)).map(series=>forecastExpiry(series.forecast.issuedAt)).filter(Number.isFinite);
+  const forecastValidUntil=expiries.length?new Date(Math.min(...expiries)).toISOString():null;
   const frames:PrecomputedManifest['frames']={};
   for(const date of dates){
     const field=computeSpatialField({...input,date});

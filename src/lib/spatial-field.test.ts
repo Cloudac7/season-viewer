@@ -76,7 +76,7 @@ test('interpolated daily histories preserve the 10°C and 22°C boundaries', () 
   }
 });
 
-test('forecast color status does not rewrite the actual season and expires on historical replay', () => {
+test('forecast color status survives midnight until its retrieval deadline and never enters historical replay', () => {
   const input = fixture([15, 15, 15, 15, 15, 5, 5, 5, 5, 5], Array(7).fill(5));
   const reading = sampleGridCell(input, 100.5, 30.5)!;
   assert.equal(reading.state!.season, 'autumn');
@@ -89,7 +89,10 @@ test('forecast color status does not rewrite the actual season and expires on hi
   assert.equal(result.status[4], 2);
   assert.equal(result.expectedDays[4], 2);
   assert.equal(result.transitionDays[4], 3);
-  input.now = '2026-10-27T04:00:00Z';
+  input.now = '2026-10-26T18:00:00Z';
+  assert.equal(sampleGridCell(input, 100.5, 30.5)!.forecastTransition!.target, 'winter');
+  assert.equal(computeSpatialField(input).status[4], 2);
+  input.now = '2026-10-27T00:00:00Z';
   assert.equal(sampleGridCell(input, 100.5, 30.5)!.forecastTransition, null);
   assert.equal(computeSpatialField(input).status[4], 1);
   input.now = '2026-10-26T04:00:00Z'; input.date = '2026-10-24';

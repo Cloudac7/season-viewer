@@ -3,14 +3,22 @@ import { addDays, beijingDate, classifyCity } from './season';
 
 export interface TemperatureForecast { issuedAt:string; days:DayTemperature[] }
 export interface ForecastTransition { target:Season; expectedDate:string; forecastDays:number; issuedAt:string }
+export const FORECAST_RETENTION_MS=24*60*60*1000;
+
+/** The latest retrieved forecast remains usable until this source-age deadline. */
+export function forecastExpiry(issuedAt:string):number {
+  const issued=Date.parse(issuedAt);
+  return Number.isFinite(issued)?issued+FORECAST_RETENTION_MS:NaN;
+}
 
 // issuedAt is the time this application retrieved the current model forecast,
 // rather than an observation time or a claimed numerical-model run time.
 export function forecastIsFresh(forecast:TemperatureForecast|undefined,now=new Date()):boolean {
   if(!forecast)return false;
   const issued=Date.parse(forecast.issuedAt),age=now.getTime()-issued;
-  const today=beijingDate(now);
-  return Number.isFinite(issued)&&age>=0&&age<24*60*60*1000&&beijingDate(new Date(issued))===today&&forecast.days.length>=7&&forecast.days.slice(0,7).every((day,index)=>day.date===addDays(today,index)&&typeof day.mean==='number'&&Number.isFinite(day.mean)&&day.mean>=-100&&day.mean<=65);
+  if(!Number.isFinite(issued))return false;
+  const issuedDay=beijingDate(new Date(issued));
+  return age>=0&&age<FORECAST_RETENTION_MS&&forecast.days.length>=7&&forecast.days.slice(0,7).every((day,index)=>day.date===addDays(issuedDay,index)&&typeof day.mean==='number'&&Number.isFinite(day.mean)&&day.mean>=-100&&day.mean<=65);
 }
 
 export function projectTransition(state:SeasonState,forecast:TemperatureForecast|undefined,date:string,now=new Date()):ForecastTransition|null {
@@ -18,7 +26,7 @@ export function projectTransition(state:SeasonState,forecast:TemperatureForecast
   // Forecast completion is only an extension of a transition already observed
   // on complete days. A transition that starts wholly in the forecast is not
   // "currently transitioning" and therefore remains outside both map stages.
-  if(!transition||!forecastIsFresh(forecast,now)||date!==addDays(beijingDate(now),-1)||state.average===null)return null;
+  if(!transition||!forecastIsFresh(forecast,now)||state.average===null)return null;
   const history=state.history.filter(day=>day.date<=date);
   if(history.at(-1)?.date!==date)return null;
   const future=forecast!.days.slice(0,7);

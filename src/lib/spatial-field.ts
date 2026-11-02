@@ -5,7 +5,7 @@ import type { TerrainGrid } from './terrain';
 import { sampleTerrain } from './terrain';
 import type { ForecastTransition, TemperatureForecast } from './forecast';
 import { forecastIsFresh, projectTransition } from './forecast';
-import { addDays, beijingDate, classifyCity } from './season';
+import { addDays, classifyCity } from './season';
 
 /** Fixed environmental lapse rate, an approximation rather than a local sounding. */
 export const LAPSE_RATE_C_PER_METER = 0.0065;
@@ -195,7 +195,7 @@ function classify(ctx: Context, series: SpatialTemperatureSeries, longitude: num
   // Only an observed transition can gain a forecast completion state. This
   // keeps pending and forecast-completion masks within the same public
   // definition used by county and city readouts.
-  const forecastTransition = date === addDays(beijingDate(ctx.now), -1) && state.transition
+  const forecastTransition = state.transition
     ? projectTransition(state, series.forecast, date, ctx.now) : null;
   return { ...series, longitude, latitude, state, forecastTransition, status: 'ready', estimated: state.estimated };
 }

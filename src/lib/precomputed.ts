@@ -3,13 +3,14 @@ import type {SpatialCell,SpatialFieldInput,SpatialFieldResult} from './spatial-f
 import {sampleGridCell} from './spatial-field';
 import type {SeasonState} from '../types';
 import {beijingDate} from './season';
+import {forecastExpiry} from './forecast';
 import type {WeatherGrid,WeatherGridCatalog} from './spatial-grid';
 import type {TerrainGrid} from './terrain';
 
 export interface PrecomputedFrame {
   field:string; meta:string; counties:string; layers:string; expiredLayers?:string;
   readyCount:number; forecastCount:number; countyReadyCount:number; countyCompleteCount:number; countyForecastCount:number;
-  /** Earliest source expiry, also bounded by the next Beijing midnight. */
+  /** Earliest retrieval-age expiry among the source forecasts. */
   forecastValidUntil:string|null;
 }
 export interface PrecomputedManifest {
@@ -59,7 +60,7 @@ export function expireSpatialForecast(field:SpatialFieldResult):SpatialFieldResu
   return {...field,status,targets,expectedDays,metadata:{...field.metadata,forecastCells:0,pendingCells}};
 }
 export function precomputedForecastFresh(manifest:PrecomputedManifest,frame:PrecomputedFrame,now=new Date()):boolean {
-  return manifest.evaluatedDay===beijingDate(now)&&!!frame.forecastValidUntil&&now.getTime()<Date.parse(frame.forecastValidUntil);
+  return !!manifest&&!!frame.forecastValidUntil&&now.getTime()<Date.parse(frame.forecastValidUntil);
 }
 export function validPrecomputedManifest(value:unknown):value is PrecomputedManifest {
   if(!value||typeof value!=='object')return false;const v=value as PrecomputedManifest;
@@ -110,7 +111,8 @@ export function packCountyReadings(date:string,readings:CountyReading[],summarie
   return {version:1,date,updatedAt,readings:readings.map(reading=>{
     const {city:_,history:__,averages:___,...state}=reading.state??{} as SeasonState;
     const issued=reading.series?.forecast?.issuedAt;
-    return {id:reading.unit.id,status:reading.status,state:reading.state?state as SavedState:null,forecastTransition:reading.forecastTransition,updatedAt:reading.series?.updatedAt??null,forecastValidUntil:issued?new Date(Math.min(Date.parse(issued)+86400000,Date.parse(`${beijingDate(new Date(issued))}T00:00:00+08:00`)+86400000)).toISOString():null};
+      const expiry=issued?forecastExpiry(issued):NaN;
+      return {id:reading.unit.id,status:reading.status,state:reading.state?state as SavedState:null,forecastTransition:reading.forecastTransition,updatedAt:reading.series?.updatedAt??null,forecastValidUntil:Number.isFinite(expiry)?new Date(expiry).toISOString():null};
   }),summaries:summaries.map(({readings:_,ready:__,...summary})=>summary)};
 }
 export function unpackCountyReadings(saved:PrecomputedCounties,units:CountyUnit[],now=new Date()):CountyReading[] {

@@ -49,10 +49,11 @@ test('compact source restores mixed retrieval dates without treating yesterday a
   assert.equal(restored.weather.records.p1.forecast.days[0].date,'2026-10-26');assert.equal(restored.weather.records.p0.forecast.days[0].date,'2026-10-25');
   assert.equal(readSelectedCell(restored,date,100.5,30.5,new Date(now))!.forecastTransition,null);
 });
-test('precomputed forecast expires at Beijing midnight and the source deadline',()=>{
-  const manifest={evaluatedDay:'2026-10-26'} as PrecomputedManifest,frame={forecastValidUntil:'2026-10-26T16:00:00Z'} as PrecomputedManifest['frames'][string];
-  assert.equal(precomputedForecastFresh(manifest,frame,new Date('2026-10-26T15:59:59Z')),true);
-  assert.equal(precomputedForecastFresh(manifest,frame,new Date('2026-10-26T16:00:00Z')),false);
+test('precomputed forecast survives Beijing midnight until its retrieval deadline',()=>{
+  const manifest={evaluatedDay:'2026-10-26'} as PrecomputedManifest,frame={forecastValidUntil:'2026-10-27T00:00:00Z'} as PrecomputedManifest['frames'][string];
+  assert.equal(precomputedForecastFresh(manifest,frame,new Date('2026-10-26T16:00:00Z')),true);
+  assert.equal(precomputedForecastFresh(manifest,frame,new Date('2026-10-26T23:59:59Z')),true);
+  assert.equal(precomputedForecastFresh(manifest,frame,new Date('2026-10-27T00:00:00Z')),false);
   assert.equal(precomputedForecastFresh(manifest,{...frame,forecastValidUntil:'2026-10-26T05:00:00Z'},new Date('2026-10-26T05:00:00Z')),false);
 });
 test('county snapshots retain prepared states and expire forecasts without classifying again',()=>{
@@ -64,7 +65,8 @@ test('county snapshots retain prepared states and expire forecasts without class
   assert.equal(current.unit,unit);assert.equal(current.state!.season,reading.state!.season);assert.equal(current.state!.average,reading.state!.average);assert.deepEqual(current.forecastTransition,reading.forecastTransition);
   const withoutObserved=structuredClone(saved);withoutObserved.readings[0].state!.transition=null;
   assert.equal(unpackCountyReadings(withoutObserved,[unit],new Date(now))[0].forecastTransition,null);
-  assert.equal(unpackCountyReadings(saved,[unit],new Date('2026-10-26T16:00:00Z'))[0].forecastTransition,null);
+  assert.equal(unpackCountyReadings(saved,[unit],new Date('2026-10-26T16:00:00Z'))[0].forecastTransition!.target,'winter');
+  assert.equal(unpackCountyReadings(saved,[unit],new Date('2026-10-27T00:00:00Z'))[0].forecastTransition,null);
 });
 test('manifest validation requires a complete frame publication',()=>{
   assert.equal(validPrecomputedManifest({version:1,revision:'abc',dates:[date],frames:{[date]:{field:'a'}}}),false);

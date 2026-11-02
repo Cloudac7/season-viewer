@@ -23,10 +23,13 @@ test('projection ignores a transition that begins wholly in the forecast',()=>{
   assert.equal(projectTransition(state,forecast(),'2026-10-10',now),null);
   assert.equal(projectTransition(state,forecast(Array(7).fill(23)),'2026-10-10',now),null);
 });
-test('projection requires current forecasts and never overlays them on historical dates',()=>{
+test('projection retains the latest forecast across midnight within its retrieval window',()=>{
   assert.equal(forecastIsFresh(forecast(),now),true);
   assert.equal(forecastIsFresh({...forecast(),issuedAt:'2026-10-10T00:00:00Z'},now),false);
   assert.equal(forecastIsFresh({...forecast(),issuedAt:'2026-10-11T05:00:00Z'},now),false);
+  const afterMidnight=new Date('2026-10-11T18:00:00Z');
+  assert.equal(forecastIsFresh(forecast(),afterMidnight),true);
+  assert.deepEqual(projectTransition(pending(),forecast(),'2026-10-10',afterMidnight),{target:'autumn',expectedDate:'2026-10-11',forecastDays:1,issuedAt:'2026-10-11T00:00:00Z'});
   assert.equal(projectTransition(pending(),forecast(),'2026-10-09',now),null);
   assert.equal(projectTransition(pending(),forecast(),'2026-10-10',new Date('2026-10-12T00:00:00Z')),null);
 });
