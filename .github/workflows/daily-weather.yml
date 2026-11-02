@@ -79,11 +79,21 @@ jobs:
         id: verify
         if: steps.deploy.outcome == 'success'
         run: |
-          curl --fail --silent --show-error --retry 5 --retry-delay 5 --retry-all-errors \
-            https://season.tomori.xyz/data/precomputed/manifest.json -o "$RUNNER_TEMP/live-manifest.json"
-          revision=$(node -e 'const fs=require("fs"),expected=JSON.parse(fs.readFileSync("dist/data/precomputed/manifest.json")),live=JSON.parse(fs.readFileSync(process.argv[1]));if(expected.revision!==live.revision)throw new Error(`Expected ${expected.revision}, received ${live.revision}`);process.stdout.write(live.revision)' "$RUNNER_TEMP/live-manifest.json")
-          echo "revision=$revision" >> "$GITHUB_OUTPUT"
-          echo "Published revision: $revision"
+          expected=$(node -e 'const fs=require("fs");process.stdout.write(JSON.parse(fs.readFileSync("dist/data/precomputed/manifest.json")).revision)')
+          for attempt in {1..12}; do
+            if curl --fail --silent --show-error --retry 2 --retry-delay 2 --retry-all-errors \
+              https://season.tomori.xyz/data/precomputed/manifest.json -o "$RUNNER_TEMP/live-manifest.json" && \
+              live=$(node -e 'const fs=require("fs");process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1])).revision)' "$RUNNER_TEMP/live-manifest.json") && \
+              [ "$live" = "$expected" ]; then
+              echo "revision=$live" >> "$GITHUB_OUTPUT"
+              echo "Published revision: $live"
+              exit 0
+            fi
+            echo "Manifest revision not visible yet (attempt $attempt/12); waiting for Cloudflare propagation."
+            sleep 5
+          done
+          echo "::error::Published manifest did not reach the expected revision $expected."
+          exit 1
       - name: Summarize weather refresh
         if: ${{ always() }}
         env:
