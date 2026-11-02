@@ -83,6 +83,75 @@ function removeSmallComponents(mask: Uint8Array, rows: number, cols: number, min
   return result;
 }
 
+/**
+ * Absorb small season islands into a neighbouring stable category. Removing
+ * their masks without relabelling would leave pinholes in the surrounding
+ * one-hot layer, which look like tiny colored diamonds after vector smoothing.
+ */
+function consolidateCategories(labels: Int8Array, valid: Uint8Array, rows: number, cols: number, dropUnresolved = false): Int8Array {
+  const result = labels.slice(), visited = new Uint8Array(labels.length), componentAt = new Int32Array(labels.length);
+  componentAt.fill(-1);
+  const components: { label: number; cells: number[]; stable: boolean }[] = [];
+  const queue = new Int32Array(labels.length);
+  for (let start = 0; start < labels.length; start++) {
+    if (!valid[start] || labels[start] < 0 || visited[start]) continue;
+    const label = labels[start];
+    let head = 0, tail = 0;
+    const id = components.length, cells: number[] = [];
+    queue[tail++] = start;
+    visited[start] = 1;
+    while (head < tail) {
+      const index = queue[head++], row = Math.floor(index / cols), col = index % cols;
+      cells.push(index);
+      componentAt[index] = id;
+      for (let dr = -1; dr <= 1; dr++) {
+        const nextRow = row + dr;
+        if (nextRow < 0 || nextRow >= rows) continue;
+        for (let dc = -1; dc <= 1; dc++) {
+          const nextCol = col + dc;
+          if ((dr === 0 && dc === 0) || nextCol < 0 || nextCol >= cols) continue;
+          const next = nextRow * cols + nextCol;
+          if (!visited[next] && valid[next] && labels[next] === label) {
+            visited[next] = 1;
+            queue[tail++] = next;
+          }
+        }
+      }
+    }
+    components.push({ label, cells, stable: cells.length >= MIN_MAPPED_CATEGORY_CELLS });
+  }
+
+  for (let id = 0; id < components.length; id++) {
+    const component = components[id];
+    if (component.stable) continue;
+    const stable = new Map<number, number>(), fallback = new Map<number, number>();
+    for (const index of component.cells) {
+      const row = Math.floor(index / cols), col = index % cols;
+      for (let dr = -1; dr <= 1; dr++) {
+        const nextRow = row + dr;
+        if (nextRow < 0 || nextRow >= rows) continue;
+        for (let dc = -1; dc <= 1; dc++) {
+          const nextCol = col + dc;
+          if ((dr === 0 && dc === 0) || nextCol < 0 || nextCol >= cols) continue;
+          const next = nextRow * cols + nextCol, neighbourId = componentAt[next];
+          if (!valid[next] || neighbourId < 0 || neighbourId === id) continue;
+          const neighbour = components[neighbourId];
+          fallback.set(neighbour.label, (fallback.get(neighbour.label) ?? 0) + 1);
+          if (neighbour.stable) stable.set(neighbour.label, (stable.get(neighbour.label) ?? 0) + 1);
+        }
+      }
+    }
+    const counts = stable.size ? stable : fallback;
+    if (!counts.size) {
+      if (dropUnresolved) for (const index of component.cells) result[index] = -1;
+      continue;
+    }
+    const replacement = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0];
+    for (const index of component.cells) result[index] = replacement;
+  }
+  return result;
+}
+
 function ringPath(ring: Position[], project: (point: Point) => Point, roundCoordinates = true): string {
   let points = ring.slice(0, -1).map(point => [point[0], point[1]] as Point);
   if (points.length < 3) return '';
@@ -125,6 +194,7 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
   const project = ([x, y]: Point): Point => projection(wgsToGcj(field.bounds.west + (x - 0.5) * field.step, field.bounds.south + (y - 0.5) * field.step))!;
   const contour = contours().size([cols, rows]).smooth(true);
   const valid = Uint8Array.from(field.seasons, (season, index) => Number(season >= 0 && season < SPATIAL_SEASONS.length && Number.isFinite(field.average[index])));
+  const seasons = consolidateCategories(field.seasons, valid, rows, cols);
   const validPath = geometryPath(contour.thresholds([0.5])(Array.from(valid))[0], project);
   // Isotherm rings can terminate at the edge of their finite grid. A one-cell
   // fallback along valid-data edges preserves exact sampled colors and is
@@ -148,10 +218,22 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
     // categorical boundary visibly coarser than the rolling-mean isotherms.
     layers.push({ ...layer, path: geometryPath(contour.thresholds([0.5])(Array.from(mask))[0], project, false) });
   };
-  SPATIAL_SEASONS.forEach((season, seasonIndex) => addMask({ key: `season:${season}`, kind: 'season', season, fill: SEASONS[season].fill }, index => field.seasons[index] === seasonIndex));
+  SPATIAL_SEASONS.forEach((season, seasonIndex) => addMask({ key: `season:${season}`, kind: 'season', season, fill: SEASONS[season].fill }, index => seasons[index] === seasonIndex));
+  const transitionUnion = Uint8Array.from(valid, (present, index) => Number(!!present && (field.status[index] === 1 || field.status[index] === 2)));
+  const compactTransitions = removeSmallComponents(transitionUnion, rows, cols);
+  const transitionLabels = new Int8Array(size).fill(-1);
+  compactTransitions.forEach((present, index) => {
+    if (present && field.seasons[index] >= 0 && field.targets[index] >= 0) {
+      transitionLabels[index] = field.seasons[index] * 16 + field.targets[index] * 4 + field.status[index] - 1;
+    }
+  });
+  const transitions = consolidateCategories(transitionLabels, compactTransitions, rows, cols, true);
   SPATIAL_SEASONS.forEach((season, seasonIndex) => SPATIAL_SEASONS.forEach((target, targetIndex) => {
     if (season === target) return;
-    ([1, 2] as const).forEach(status => addMask({ key: `transition:${season}:${target}:${status}`, kind: 'transition', season, target, status, fill: transitionColors(season, target)[status === 2 ? 'forecast' : 'pending'].fill }, index => field.seasons[index] === seasonIndex && field.targets[index] === targetIndex && field.status[index] === status));
+    ([1, 2] as const).forEach(status => {
+      const label = seasonIndex * 16 + targetIndex * 4 + status - 1;
+      addMask({ key: `transition:${season}:${target}:${status}`, kind: 'transition', season, target, status, fill: transitionColors(season, target)[status === 2 ? 'forecast' : 'pending'].fill }, index => transitions[index] === label);
+    });
   }));
   if (validPath) {
     // The first temperature band covers valid land; higher thresholds are

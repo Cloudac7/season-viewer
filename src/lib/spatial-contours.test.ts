@@ -162,3 +162,29 @@ test('cartographic cleanup removes isolated categorical diamonds without hiding 
     assert.equal(assets.layers.filter(layer => layer.kind === 'season' && layer.season === season).length, 1);
   }
 });
+
+test('small season islands are absorbed without leaving pinholes or an extra category', () => {
+  const field = categoricalFixture(), noise = 0;
+  field.seasons[noise] = 1;
+  const assets = generateSpatialContours(field);
+  for (let index = 0; index < field.seasons.length; index++) {
+    const containing = assets.layers.filter(layer => layer.kind === 'season' && contains(layer.path, pointAt(field, index)));
+    assert.equal(containing.length, 1, `sample ${index}`);
+    if (index === noise) assert.equal(containing[0].season, SPATIAL_SEASONS[0]);
+  }
+});
+
+test('small transition classes are absorbed into the surrounding transition color', () => {
+  const field = categoricalFixture();
+  for (let row = 1; row < 5; row++) {
+    for (let col = 1; col < 5; col++) {
+      const index = row * field.cols + col;
+      field.status[index] = 1; field.targets[index] = 2;
+    }
+  }
+  const island = 2 * field.cols + 2;
+  field.status[island] = 2;
+  const transitions = generateSpatialContours(field).layers.filter(layer => layer.kind === 'transition');
+  assert.deepEqual(transitions.map(layer => layer.status), [1]);
+  assert.equal(contains(transitions[0].path, pointAt(field, island)), true);
+});
