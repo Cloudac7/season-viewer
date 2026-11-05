@@ -16,8 +16,9 @@
     "data:grid:update": "node --import tsx scripts/update-weather-grid.ts",
     "data:terrain:import": "node --import tsx scripts/import-terrain.ts",
     "data:precompute": "node --import tsx scripts/precompute-spatial.ts",
+    "data:seed": "node --import tsx scripts/seed-production-weather.ts",
     "data:refresh": "node --import tsx scripts/refresh-precomputed.ts",
-    "prebuild": "npm run data:precompute",
+    "prebuild": "node --import tsx scripts/prepare-build.ts",
     "predev": "npm run data:precompute",
     "postbuild": "node --import tsx scripts/prune-publication.ts"
   },

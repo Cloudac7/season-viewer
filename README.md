@@ -20,12 +20,13 @@ npm run data:refresh           # 更新县级和规则气温，随后生成新�
 npm run data:grid:update       # 只更新独立规则气温快照
 npm run data:counties:update   # 只更新县级代表点快照
 npm run data:grid:import       # 重新生成独立天气采样目录
+npm run data:seed              # 从当前线上快照补齐县级和格点天气
 npm run data:terrain:import    # 导入公开 Terrarium DEM（需联网，原始瓦片缓存）
 ```
 
 `data:refresh` 遇上游失败会停止后续下载，仍尝试用已有资料生成可用快照，错误以退出码报告。429 不循环重试或绕过配额。正式静态部署需由部署环境每日运行 `data:refresh` 再执行 `build`、发布 `dist/`；浏览器不会直接向 Open-Meteo 发起全国 API 请求。静态托管本身不会获取新天气，页面保留真实资料时间。
 
-Cloudflare 部署使用 Wrangler、Workers Static Assets 和 Cron Triggers。首次使用前执行 `npx wrangler login` 完成 Cloudflare OAuth；`npm run deploy:cloudflare` 会重新构建（包含每日快照预计算），再将站点和定时触发器部署到配置的 `season.tomori.xyz` 自定义域。Cloudflare 账号须包含并启用 `tomori.xyz` zone，且该子域尚未绑定其他 CNAME/服务；Wrangler 会为 Workers 自定义域建立 DNS 记录并申请证书。后续每次天气资料刷新后重新运行此命令即可发布新快照。
+Cloudflare 部署使用 Wrangler、Workers Static Assets 和 Cron Triggers。首次使用前执行 `npx wrangler login` 完成 Cloudflare OAuth；`npm run deploy:cloudflare` 会重新构建（包含每日快照预计算），再将站点和定时触发器部署到配置的 `season.tomori.xyz` 自定义域。Cloudflare 账号须包含并启用 `tomori.xyz` zone，且该子域尚未绑定其他 CNAME/服务；Wrangler 会为 Workers 自定义域建立 DNS 记录并申请证书。后续每次天气资料刷新后重新运行此命令即可发布新快照。Cloudflare Workers Builds 每次按仓库检出的天气快照预计算，而每日刷新的快照不会自动回写仓库；为避免代码构建把线上资料回退，`prebuild` 在 Workers Builds 环境（`WORKERS_CI`）下会先执行 `data:seed`，从当前线上快照读取全量天气再预计算。若自定义构建命令绕过了 `npm run build` 的前置钩子，请显式使用 `npm run data:seed && npm run build`。
 
 ## 每日自动更新
 
