@@ -297,6 +297,18 @@ function smoothCategoricalLayers(
     }
   });
   const pinned = new Set<string>();
+  // Low-pass smoothing shrinks closed rings, particularly tiny mountain zones.
+  // Pin both sides of small season rings (including the surrounding hole) via
+  // shared vertex keys, preserving their footprint without opening a seam.
+  if (surfaces.some(surface => surface.layer.kind === 'season')) {
+    for (const surfaceRings of rings) for (const ring of surfaceRings) {
+      const area = Math.abs(ring.reduce((sum, point, index) => {
+        const next = ring[(index + 1) % ring.length];
+        return sum + point[0] * next[1] - next[0] * point[1];
+      }, 0)) / 2;
+      if (area < MIN_MAPPED_CATEGORY_CELLS) for (const point of ring) pinned.add(latticeKey(point));
+    }
+  }
   rings.forEach((surfaceRings, surfaceIndex) => {
     for (const ring of surfaceRings) {
       const length = ring.length;
@@ -379,7 +391,9 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
   const project = ([x, y]: Point): Point => projection(wgsToGcj(field.bounds.west + (x - 0.5) * field.step, field.bounds.south + (y - 0.5) * field.step))!;
   const contour = contours().size([cols, rows]).smooth(true);
   const valid = Uint8Array.from(field.seasons, (season, index) => Number(season >= 0 && season < SPATIAL_SEASONS.length && Number.isFinite(field.average[index])));
-  const seasons = stabilizeCategories(field.seasons, valid, rows, cols);
+  // Small season islands can be genuine high-altitude climate zones. Only
+  // resolve ambiguous crossings; never absorb them based on their area.
+  const seasons = resolveAmbiguousSaddles(field.seasons, valid, rows, cols);
   const validPath = geometryPath(contour.thresholds([0.5])(Array.from(valid))[0], project);
   // Isotherm rings can terminate at the edge of their finite grid. A one-cell
   // fallback along valid-data edges preserves exact sampled colors and is
@@ -397,6 +411,7 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
       Uint8Array.from(valid, (present, index) => Number(!!present && predicate(index))),
       rows,
       cols,
+      layer.kind === 'season' ? 1 : MIN_MAPPED_CATEGORY_CELLS,
     );
     if (!mask.some(Boolean)) return;
     // Share the full-resolution marching-squares vertices with temperature.
@@ -442,5 +457,5 @@ export function generateSpatialContours(field: SpatialFieldResult): SpatialConto
     });
   }
   return { version: 1, projection: SPATIAL_CONTOUR_PROJECTION, validPath, layers,
-    note: `部署时生成平滑矢量分级面。季节与换季按独立类别掩膜描边，颜色不插值，并省略小于 ${MIN_MAPPED_CATEGORY_CELLS} 个 0.1° 显示格的孤立类别碎斑；对角相接造成的等值面歧义在显示格点中归并到相邻类别，避免接缝出现白色针孔；分类边界在共享边上做低通平滑，相邻类别使用同一组顶点，既减轻斜向台阶又不产生缝隙；均温按连续气温等值面分档。各类图层使用同一套轮廓网格，边界为显示近似，点击读数仍使用原始格点；缺测区域保持空缺。` };
+    note: `部署时生成平滑矢量分级面。季节与换季按独立类别掩膜描边，颜色不插值；季节保留高山等小面积气候区，小闭环不作收缩平滑，换季仍清理小于 ${MIN_MAPPED_CATEGORY_CELLS} 个 0.1° 显示格的孤立碎斑；对角相接造成的等值面歧义在显示格点中归并到相邻类别，避免接缝出现白色针孔；分类边界在共享边上做低通平滑，相邻类别使用同一组顶点，既减轻斜向台阶又不产生缝隙；均温按连续气温等值面分档。各类图层使用同一套轮廓网格，边界为显示近似，点击读数仍使用原始格点；缺测区域保持空缺。` };
 }

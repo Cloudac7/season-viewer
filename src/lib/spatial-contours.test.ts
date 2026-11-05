@@ -163,14 +163,39 @@ test('cartographic cleanup removes isolated categorical diamonds without hiding 
   }
 });
 
-test('small season islands are absorbed without leaving pinholes or an extra category', () => {
+test('small season islands retain their category without leaving pinholes', () => {
   const field = categoricalFixture(), noise = 0;
   field.seasons[noise] = 1;
   const assets = generateSpatialContours(field);
   for (let index = 0; index < field.seasons.length; index++) {
     const containing = assets.layers.filter(layer => layer.kind === 'season' && contains(layer.path, pointAt(field, index)));
     assert.equal(containing.length, 1, `sample ${index}`);
-    if (index === noise) assert.equal(containing[0].season, SPATIAL_SEASONS[0]);
+    if (index === noise) assert.equal(containing[0].season, SPATIAL_SEASONS[1]);
+  }
+});
+
+test('tiny mountain winter zones retain their footprint and share a watertight boundary', () => {
+  for (const cells of [[44], [44, 45, 54], [33, 34, 43, 44, 53, 54, 63]]) {
+    const field = categoricalFixture();
+    field.seasons.fill(2);
+    for (const index of cells) field.seasons[index] = 3;
+    const original = field.seasons.slice();
+    const surfaces = generateSpatialContours(field).layers.filter(layer => layer.kind === 'season');
+    assert.deepEqual(field.seasons, original);
+    for (let index = 0; index < field.seasons.length; index++) {
+      assert.deepEqual(surfaces.filter(layer => contains(layer.path, pointAt(field, index))).map(layer => layer.season),
+        [SPATIAL_SEASONS[field.seasons[index]]], `zone ${cells.length}, sample ${index}`);
+    }
+    // A singleton's unsmoothed diamond reaches 0.5 cells from its center;
+    // two low-pass passes used to reduce that to 0.125 cells.
+    if (cells.length === 1) {
+      const point = projection(wgsToGcj(field.bounds.west + 4.3 * field.step, field.bounds.south + 4 * field.step))!;
+      assert.deepEqual(surfaces.filter(layer => contains(layer.path, point)).map(layer => layer.season), ['winter']);
+    }
+    for (let y = 2.17; y < 7; y += 0.23) for (let x = 2.13; x < 7; x += 0.23) {
+      const point = projection(wgsToGcj(field.bounds.west + x * field.step, field.bounds.south + y * field.step))!;
+      assert.equal(surfaces.filter(layer => contains(layer.path, point)).length, 1);
+    }
   }
 });
 
