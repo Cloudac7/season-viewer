@@ -3,7 +3,7 @@ import {geoArea,geoMercator,geoPath} from 'd3-geo';
 import type {FeatureCollection} from 'geojson';
 import {LoaderCircle,LocateFixed,Minus,Plus} from 'lucide-react';
 import type {Region,Season} from '../types';
-import type {CountyBoundaries,CountyReading} from '../lib/counties';
+import type {CountyBoundaries,CountyReading,PrefectureBoundaries} from '../lib/counties';
 import {SEASONS} from '../data';
 import {countyMapColor,countyTransitionStatus,countyTransitionAppearance,transitionColors} from '../lib/map-status';
 import type {SpatialFieldResult} from '../lib/spatial-field';
@@ -13,14 +13,24 @@ import type {SpatialContours,SpatialContourLayer} from '../lib/spatial-contours'
 import type {GridLocation} from '../lib/grid-location';
 import {gcjToWgs,wgsToGcj} from '../lib/coordinates';
 import {addDays} from '../lib/season';
+import {pinchView,wheelZoomFactor,zoomAboutPoint} from '../lib/map-gesture';
 
-interface Props{readings:CountyReading[];boundaries:CountyBoundaries|null;selected:string;focus:{id:string;revision:number}|null;onSelect:(id:string,locate?:boolean)=>void;filter:Season|'all';region:Region|'all';layer:'season'|'temperature';showTransitions:boolean;showPoints:boolean;showBoundaries:boolean;spatialField?:SpatialFieldResult|null;spatialLayers?:SpatialContours|null;spatialMode?:boolean;onSpatialSelect?:(point:{lon:number;lat:number})=>void;spatialLoading?:boolean;spatialSelected?:{lon:number;lat:number}|null;getSpatialLocation?:(lon:number,lat:number)=>GridLocation|null}
+interface Props{readings:CountyReading[];boundaries:CountyBoundaries|null;prefectureBoundaries?:PrefectureBoundaries|null;selected:string;focus:{id:string;revision:number}|null;onSelect:(id:string,locate?:boolean)=>void;filter:Season|'all';region:Region|'all';layer:'season'|'temperature';showTransitions:boolean;showPoints:boolean;showBoundaries:boolean;showProvinceNames?:boolean;spatialField?:SpatialFieldResult|null;spatialLayers?:SpatialContours|null;spatialMode?:boolean;onSpatialSelect?:(point:{lon:number;lat:number})=>void;spatialLoading?:boolean;spatialSelected?:{lon:number;lat:number}|null;getSpatialLocation?:(lon:number,lat:number)=>GridLocation|null}
 interface MapHover{reading:CountyReading|null;x:number;y:number;point?:{lon:number;lat:number;index:number}}
-export default function CountyMap({readings,boundaries,selected,focus,onSelect,filter,region,layer,showTransitions,showPoints,showBoundaries=false,spatialField=null,spatialLayers=null,spatialMode=false,onSpatialSelect,spatialLoading=false,spatialSelected=null,getSpatialLocation}:Props){
+interface Pointer{x:number;y:number}
+
+/** Convert a client point to the map's 840×550 SVG space. */
+const svgPoint=(clientX:number,clientY:number,rect:DOMRect)=>({x:(clientX-rect.left)*840/rect.width,y:(clientY-rect.top)*550/rect.height});
+
+export default function CountyMap({readings,boundaries,prefectureBoundaries=null,selected,focus,onSelect,filter,region,layer,showTransitions,showPoints,showBoundaries=false,showProvinceNames=false,spatialField=null,spatialLayers=null,spatialMode=false,onSpatialSelect,spatialLoading=false,spatialSelected=null,getSpatialLocation}:Props){
   const [provinces,setProvinces]=useState<FeatureCollection|null>(null);
   const [view,setView]=useState({zoom:1,x:0,y:0}),[hover,setHover]=useState<MapHover|null>(null);
   const [width,setWidth]=useState(840);
-  const svg=useRef<SVGSVGElement>(null),gesture=useRef<{x:number;y:number;ox:number;oy:number;id:string|null;land:boolean;moved:boolean}|null>(null);
+  const svg=useRef<SVGSVGElement>(null);
+  const viewRef=useRef(view);viewRef.current=view;
+  const pointers=useRef<Map<number,Pointer>>(new Map());
+  const gesture=useRef<{x:number;y:number;ox:number;oy:number;id:string|null;land:boolean;moved:boolean;multi:boolean}|null>(null);
+  const pinch=useRef<{dist:number;startZoom:number;startX:number;startY:number;from:Pointer}|null>(null);
   const id=useId().replaceAll(':','');
   const projection=useMemo(()=>geoMercator().center([104.5,36.5]).scale(610).translate([420,271]),[]);
   const path=useMemo(()=>geoPath(projection),[projection]);
@@ -29,6 +39,7 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
   const provinceRegions=useMemo(()=>new Map<number,Region>([...readings.map(reading=>[reading.unit.provinceCode,reading.unit.region] as [number,Region]),[710000,'港澳台']]),[readings]);
   const shapes=useMemo(()=>boundaries?.features.map(feature=>({id:feature.properties.id,d:path(feature)??'',bounds:path.bounds(feature)}))??[],[boundaries,path]);
   const shapeById=useMemo(()=>new Map(shapes.map(shape=>[shape.id,shape])),[shapes]);
+  const prefectureShapes=useMemo(()=>prefectureBoundaries?.features.map(feature=>({id:feature.properties.id,d:path(feature)??''}))??[],[prefectureBoundaries,path]);
   const landPath=useMemo(()=>provinces?.features.filter(feature=>feature.properties?.adcode!=='100000_JD').map(feature=>path(feature)??'').join(' ')??'',[provinces,path]);
   const surfaceLayers=useMemo(()=>spatialLayers?.layers.filter(surface=>layer==='temperature'?surface.kind==='temperature':surface.kind==='season'||(surface.kind==='transition'&&showTransitions))??[],[spatialLayers,layer,showTransitions]);
   const selectedSeasonPath=filter==='all'?'':spatialLayers?.layers.find(surface=>surface.kind==='season'&&surface.season===filter)?.path??'';
@@ -51,7 +62,21 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
     const zoom=Math.min(spatialMode?10:48,Math.max(3,Math.min(550/Math.max(1,right-left),360/Math.max(1,bottom-top))));
     setView({zoom,x:(420-(left+right)/2)*zoom,y:(275-(top+bottom)/2)*zoom});setHover(null);
   },[focus,shapeById,spatialMode]);
-  const changeZoom=(scale:number)=>{setView(v=>({...v,zoom:Math.max(.9,Math.min(64,v.zoom*scale))}));setHover(null);};
+  // Ctrl/⌘ + wheel zooms about the pointer; a plain wheel is left for page scroll.
+  useEffect(()=>{
+    const target=svg.current;if(!target)return;
+    const onWheel=(event:WheelEvent)=>{
+      if(!(event.ctrlKey||event.metaKey))return;
+      event.preventDefault();
+      const point=svgPoint(event.clientX,event.clientY,target.getBoundingClientRect());
+      const factor=wheelZoomFactor(event.deltaY);
+      setView(current=>zoomAboutPoint(current,current.zoom*factor,point.x,point.y));
+      setHover(null);
+    };
+    target.addEventListener('wheel',onWheel,{passive:false});
+    return()=>target.removeEventListener('wheel',onWheel);
+  },[boundaries]);
+  const changeZoom=(scale:number)=>{setView(current=>zoomAboutPoint(current,current.zoom*scale,420,275));setHover(null);};
   const visible=useMemo(()=>shapes.filter(shape=>{
     const [[left,top],[right,bottom]]=shape.bounds;
     return (right-420)*view.zoom+420+view.x>=0&&(left-420)*view.zoom+420+view.x<=840&&(bottom-275)*view.zoom+275+view.y>=0&&(top-275)*view.zoom+275+view.y<=550;
@@ -80,19 +105,61 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
   if(!boundaries)return <div className="map-loading">正在载入真实县级边界…</div>;
   return <div className={`map-canvas field-canvas county-map-canvas county-borders-${showBoundaries?'visible':'hidden'}`} data-county-borders={showBoundaries?'visible':'hidden'} data-color-mode={spatialMode?'terrain-grid':'county-reference'} aria-busy={spatialLoading} onMouseLeave={()=>setHover(null)}>
     <div className="map-watermark">{spatialMode?'TERRAIN SEASONS':'COUNTY SEASONS'}<br/><span>OPEN-METEO · DAILY MODEL</span></div>
-    <svg ref={svg} className="china-map field-map-svg county-map-svg" viewBox="0 0 840 550" role="img" tabIndex={0} aria-label={spatialMode?'全国地形订正格点季节地图，点击查看当地格点推算，拖动平移':`全国真实县界季节地图，${readings.length}个行政单元，点击县区查看代表点数据，拖动平移`}
+    <svg ref={svg} className="china-map field-map-svg county-map-svg" viewBox="0 0 840 550" role="img" tabIndex={0} aria-label={spatialMode?'全国地形订正格点季节地图，点击查看当地格点推算，双指缩放或拖动平移':`全国真实县界季节地图，${readings.length}个行政单元，点击县区查看代表点数据，双指缩放或拖动平移`}
       onKeyDown={e=>{if(e.key==='+'||e.key==='='){e.preventDefault();changeZoom(1.4);}if(e.key==='-'){e.preventDefault();changeZoom(1/1.4);}if(e.key==='0')setView({zoom:1,x:0,y:0});if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();setView(v=>({...v,x:v.x+(e.key==='ArrowLeft'?60:e.key==='ArrowRight'?-60:0),y:v.y+(e.key==='ArrowUp'?60:e.key==='ArrowDown'?-60:0)}));}}}
       onDoubleClick={e=>{e.preventDefault();changeZoom(1.6);}}
-      onPointerDown={e=>{if(e.button!==0)return;const target=e.target as SVGElement,county=target.getAttribute('data-county');gesture.current={x:e.clientX,y:e.clientY,ox:view.x,oy:view.y,id:county,land:!!county||target.getAttribute('data-spatial-land')==='true',moved:false};e.currentTarget.setPointerCapture(e.pointerId);setHover(null);}}
+      onPointerDown={e=>{
+        if(e.pointerType==='mouse'&&e.button!==0)return;
+        pointers.current.set(e.pointerId,{x:e.clientX,y:e.clientY});
+        try{(e.currentTarget as Element).setPointerCapture(e.pointerId);}catch{/* capture is best-effort */}
+        if(pointers.current.size===1){
+          const target=e.target as SVGElement,county=target.getAttribute('data-county');
+          gesture.current={x:e.clientX,y:e.clientY,ox:viewRef.current.x,oy:viewRef.current.y,id:county,land:!!county||target.getAttribute('data-spatial-land')==='true',moved:false,multi:false};
+          pinch.current=null;setHover(null);
+        }else if(pointers.current.size===2){
+          if(gesture.current){gesture.current.moved=true;gesture.current.multi=true;}
+          const rect=e.currentTarget.getBoundingClientRect(),points=[...pointers.current.values()];
+          const a=svgPoint(points[0].x,points[0].y,rect),b=svgPoint(points[1].x,points[1].y,rect);
+          pinch.current={dist:Math.hypot(b.x-a.x,b.y-a.y),startZoom:viewRef.current.zoom,startX:viewRef.current.x,startY:viewRef.current.y,from:{x:(a.x+b.x)/2,y:(a.y+b.y)/2}};
+          setHover(null);
+        }
+      }}
       onPointerMove={e=>{
+        if(pointers.current.has(e.pointerId))pointers.current.set(e.pointerId,{x:e.clientX,y:e.clientY});
+        if(pinch.current&&pointers.current.size>=2){
+          const rect=e.currentTarget.getBoundingClientRect(),points=[...pointers.current.values()];
+          const a=svgPoint(points[0].x,points[0].y,rect),b=svgPoint(points[1].x,points[1].y,rect);
+          const dist=Math.hypot(b.x-a.x,b.y-a.y),to={x:(a.x+b.x)/2,y:(a.y+b.y)/2};
+          const nextZoom=pinch.current.startZoom*(dist/Math.max(1,pinch.current.dist));
+          setView(pinchView({zoom:pinch.current.startZoom,x:pinch.current.startX,y:pinch.current.startY},nextZoom,pinch.current.from,to));
+          return;
+        }
         const drag=gesture.current;
         if(drag){const rect=e.currentTarget.getBoundingClientRect(),dx=(e.clientX-drag.x)*840/rect.width,dy=(e.clientY-drag.y)*550/rect.height;if(Math.abs(dx)+Math.abs(dy)>3){drag.moved=true;setView(v=>({...v,x:drag.ox+dx,y:drag.oy+dy}));}return;}
         const county=(e.target as SVGElement).getAttribute('data-county'),reading=county?indexed.get(county):null;
         if(spatialMode){const point=(county||(e.target as SVGElement).getAttribute('data-spatial-land')==='true')?spatialPoint(e.clientX,e.clientY):null;setHover(point?{reading:reading??null,x:e.clientX,y:e.clientY,point}:null);}
         else setHover(reading?{reading,x:e.clientX,y:e.clientY}:null);
       }}
-      onPointerUp={e=>{const drag=gesture.current;gesture.current=null;if(e.currentTarget.hasPointerCapture(e.pointerId))e.currentTarget.releasePointerCapture(e.pointerId);if(!drag||drag.moved)return;if(spatialMode){const point=drag.land?spatialPoint(e.clientX,e.clientY):null;if(point)onSpatialSelect?.({lon:point.lon,lat:point.lat});}else if(drag.id)onSelect(drag.id);}}
-      onPointerCancel={()=>{gesture.current=null;}}>
+      onPointerUp={e=>{
+        const wasPinching=!!pinch.current;
+        pointers.current.delete(e.pointerId);
+        try{if((e.currentTarget as Element).hasPointerCapture(e.pointerId))(e.currentTarget as Element).releasePointerCapture(e.pointerId);}catch{/* already released */}
+        if(pointers.current.size<2)pinch.current=null;
+        if(pointers.current.size===0){
+          const drag=gesture.current;gesture.current=null;
+          if(!drag||drag.moved||drag.multi)return;
+          if(spatialMode){const point=drag.land?spatialPoint(e.clientX,e.clientY):null;if(point)onSpatialSelect?.({lon:point.lon,lat:point.lat});}
+          else if(drag.id)onSelect(drag.id);
+        }else if(pointers.current.size===1&&wasPinching){
+          const point=[...pointers.current.values()][0];
+          gesture.current={x:point.x,y:point.y,ox:viewRef.current.x,oy:viewRef.current.y,id:null,land:false,moved:true,multi:true};
+        }
+      }}
+      onPointerCancel={e=>{
+        pointers.current.delete(e.pointerId);
+        if(pointers.current.size<2)pinch.current=null;
+        if(pointers.current.size===0)gesture.current=null;
+      }}>
       <defs><clipPath id={`${id}-sea`}><rect x="2" y="2" width="75" height="80"/></clipPath><clipPath id={`${id}-spatial-land`} clipPathUnits="userSpaceOnUse"><path d={landPath} fill="#fff" clipRule="nonzero"/></clipPath><clipPath id={`${id}-spatial-valid`} clipPathUnits="userSpaceOnUse"><path d={spatialLayers?.validPath??''} clipRule="evenodd"/></clipPath><clipPath id={`${id}-spatial-season`} clipPathUnits="userSpaceOnUse"><path d={selectedSeasonPath} clipRule="evenodd"/></clipPath></defs>
       <g className="county-map-transform" transform={`translate(${420+view.x} ${275+view.y}) scale(${view.zoom}) translate(-420 -275)`}>
         {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="#e0e6e2" stroke="#667786" strokeOpacity={.4} strokeWidth={.5/view.zoom} data-spatial-land={spatialMode&&feature.properties?.adcode!=='100000_JD'?'true':undefined} pointerEvents={spatialMode&&feature.properties?.adcode!=='100000_JD'?'all':'none'}/>)}
@@ -105,21 +172,22 @@ export default function CountyMap({readings,boundaries,selected,focus,onSelect,f
           const muted=(region!=='all'&&reading.unit.region!==region)||(filter!=='all'&&reading.state?.season!==filter);
           const fill=countyMapColor(reading,layer,showTransitions);
           return <g key={shape.id} opacity={!spatialMode&&muted?.2:1} className="county-area" data-season={spatialMode?undefined:reading.state?.season??'missing'} data-transition={spatialMode?undefined:countyTransitionStatus(reading)}>
-            <path data-county={shape.id} d={shape.d} fill={spatialMode?'transparent':fill} stroke={showBoundaries?'rgba(248,250,245,.62)':spatialMode?'none':fill} strokeWidth={(showBoundaries ? .4 : .35)/view.zoom} className="county-shape"/>
+            <path data-county={shape.id} d={shape.d} fill={spatialMode?'transparent':fill} stroke={spatialMode?'none':fill} strokeWidth={.35/view.zoom} className="county-shape"/>
           </g>;
         })}
+        {showBoundaries&&prefectureShapes.length>0&&<g className="prefecture-borders" pointerEvents="none" data-prefecture-borders="visible">{prefectureShapes.map(shape=><path key={shape.id} d={shape.d} fill="none" stroke="#8fa39a" strokeWidth={.42/view.zoom} strokeLinejoin="round"/>)}</g>}
         {provinces?.features.map((feature,i)=><path key={i} d={path(feature)??''} fill="none" stroke="#667786" strokeOpacity={.4} strokeWidth={.5/view.zoom} pointerEvents="none"/>)}
         {!spatialMode&&active&&<path d={active.d} fill="none" stroke="#315e48" strokeWidth={1.5/view.zoom} pointerEvents="none"/>}
-        {view.zoom<=2&&provinces?.features.filter(feature=>typeof feature.properties?.adcode==='number'&&Number(feature.properties.adcode)<810000).map(feature=>{
+        {showProvinceNames&&view.zoom<=2&&provinces?.features.filter(feature=>typeof feature.properties?.adcode==='number'&&Number(feature.properties.adcode)<810000).map(feature=>{
           const center=feature.properties?.centroid??feature.properties?.center;if(!center)return null;const xy=projection(center);if(!xy)return null;
           return <text key={feature.properties?.adcode} x={xy[0]} y={xy[1]} className="province-label field-province-label">{String(feature.properties?.name).replace(/壮族自治区|回族自治区|维吾尔自治区|自治区|省|市/g,'')}</text>;
         })}
         {showPoints&&visible.map(shape=>{const reading=indexed.get(shape.id);const xy=reading?projection(reading.unit.display):null;return xy?<circle key={shape.id} cx={xy[0]} cy={xy[1]} r={1.8/view.zoom} fill="#365c48" stroke="#fff" strokeWidth={.6/view.zoom} pointerEvents="none"/>:null;})}
         {view.zoom>=3&&label&&current&&(!spatialMode||focus?.id===selected)&&<text x={label[0]} y={label[1]-8/view.zoom} className="county-selected-label" fontSize={11*840/width/view.zoom} pointerEvents="none">{current.unit.name}</text>}
-        {selectedGrid&&spatialSelected&&<g className="spatial-selected-point" data-selected-grid-point={`${spatialSelected.lon},${spatialSelected.lat}`} transform={`translate(${selectedGrid[0]} ${selectedGrid[1]}) scale(${markerScale})`} pointerEvents="none"><circle r="6" fill="#ffffffc9" stroke="#fff" strokeWidth="2.5"/><circle r="5" fill="none" stroke="#315e48" strokeWidth="1.4"/><path d="M-10 0H-7M7 0H10M0-10V-7M0 7V10" fill="none" stroke="#fff" strokeWidth="3.2"/><path d="M-10 0H-7M7 0H10M0-10V-7M0 7V10" fill="none" stroke="#315e48" strokeWidth="1.4"/><circle r="1.3" fill="#315e48"/></g>}
+        {selectedGrid&&spatialSelected&&<g className="spatial-selected-point" data-selected-grid-point={`${spatialSelected.lon},${spatialSelected.lat}`} transform={`translate(${selectedGrid[0]} ${selectedGrid[1]}) scale(${markerScale})`} pointerEvents="none"><circle r="7" fill="#ffffffd9" stroke="#315e48" strokeWidth="1.3"/><path d="M-12 0H-4M4 0H12M0-12V-4M0 4V12" fill="none" stroke="#315e48" strokeWidth="1.6" strokeLinecap="round"/><circle r="1.6" fill="#315e48"/></g>}
       </g>
       <g transform="translate(36,455)" className="compass"><path d="M0 34V0m-5 8L0 0l5 8"/><text x="0" y="-9">N</text></g>
-      <g transform="translate(728,424)"><rect width="79" height="102" rx="3" fill="#f8faf8" stroke="#dce4de"/><g clipPath={`url(#${id}-sea)`}>{provinces?.features.filter(f=>f.properties?.adcode===460000||f.properties?.adcode==='100000_JD').map((f,i)=><path key={i} d={seaPath(f)??''} fill="#d5dfd3" stroke="#667786" strokeOpacity={.4} strokeWidth=".5"/>)}{!spatialMode&&boundaries.features.filter(f=>f.properties.id==='460300').map(f=>{const reading=indexed.get('460300'),fill=reading?countyMapColor(reading,layer,showTransitions):'#e0e6e2';return <path key="sansha-counties" d={seaPath(f)??''} fill={fill} stroke={showBoundaries?'rgba(248,250,245,.62)':fill} strokeWidth={showBoundaries ? .4 : .35} pointerEvents="none"/>;})}</g><text x="39.5" y="92" className="inset-label">南海诸岛</text></g>
+      <g transform="translate(728,424)"><rect width="79" height="102" rx="3" fill="#f8faf8" stroke="#dce4de"/><g clipPath={`url(#${id}-sea)`}>{provinces?.features.filter(f=>f.properties?.adcode===460000||f.properties?.adcode==='100000_JD').map((f,i)=><path key={i} d={seaPath(f)??''} fill="#d5dfd3" stroke="#667786" strokeOpacity={.4} strokeWidth=".5"/>)}{!spatialMode&&boundaries.features.filter(f=>f.properties.id==='460300').map(f=>{const reading=indexed.get('460300'),fill=reading?countyMapColor(reading,layer,showTransitions):'#e0e6e2';return <path key="sansha-counties" d={seaPath(f)??''} fill={fill} stroke={fill} strokeWidth={.35} pointerEvents="none"/>;})}</g><text x="39.5" y="92" className="inset-label">南海诸岛</text></g>
     </svg>
     <div className="field-map-caption"><i/>{view.zoom.toFixed(1)}× · {spatialMode?'DEM 地形订正 · 平滑矢量面':'真实县界 · 代表点参考季节'}</div>
     {spatialMode&&spatialLoading&&<div className="spatial-map-loading" role="status"><LoaderCircle size={14} className="spin"/>正在载入预计算气温场…</div>}

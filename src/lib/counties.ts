@@ -8,6 +8,8 @@ import type { ForecastTransition, TemperatureForecast } from './forecast';
 export interface CountyUnit {id:string;name:string;provinceCode:number;province:string;cityCode:number;city:string;region:Region;kind:'county'|'undivided-city';display:[number,number];lon:number;lat:number;pointMethod:string}
 export interface CountyCatalog {version:1;source:{name:string;url:string;retrievedAt:string;boundaryVersion:string;displayCrs:string;weatherCrs:string;note:string};units:CountyUnit[]}
 export type CountyBoundaries=FeatureCollection<Geometry,{id:string}>;
+/** Prefecture-level (地级) outlines dissolved from county boundaries by cityCode. */
+export type PrefectureBoundaries=FeatureCollection<Geometry,{id:string;name:string}>;
 export interface CountySeries {lon:number;lat:number;updatedAt:string;days:DayTemperature[];modelGrid?:[number,number];forecast?:TemperatureForecast}
 export interface CountyWeather {version:1;source:'open-meteo';timeZone:'Asia/Shanghai';updatedAt:string|null;records:Record<string,CountySeries>}
 export interface CountyReading {unit:CountyUnit;state:SeasonState|null;series:CountySeries|null;status:'ready'|'missing'|'insufficient'|'stale';forecastTransition:ForecastTransition|null}

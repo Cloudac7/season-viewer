@@ -1,6 +1,6 @@
 import {useEffect,useMemo,useRef,useState} from 'react';
 import type {CSSProperties} from 'react';
-import {ArrowRight,BookOpen,CalendarDays,ChevronLeft,ChevronRight,CircleHelp,Compass,ExternalLink,Grid3X3,Info,Leaf,Map,MapPin,Radio,RefreshCw,Search,SlidersHorizontal,X} from 'lucide-react';
+import {ArrowRight,BookOpen,CalendarDays,ChevronLeft,ChevronRight,CircleHelp,Compass,Download,ExternalLink,Grid3X3,Info,Leaf,Map,MapPin,Radio,RefreshCw,Search,Share2,SlidersHorizontal,X} from 'lucide-react';
 import {REGIONS,SEASONS,SEASON_ORDER} from './data';
 import type {Region,Season,SeasonState} from './types';
 import {addDays,beijingDate} from './lib/season';
@@ -15,6 +15,7 @@ import SpatialDetail from './components/SpatialDetail';
 import SeasonIcon from './components/SeasonIcon';
 import TransitionLegend from './components/TransitionLegend';
 import TemperatureLegend from './components/TemperatureLegend';
+import {downloadBlob,exportMapPng} from './lib/map-export';
 
 type View='map'|'watch';
 const statusVars=(appearance:ReturnType<typeof countyTransitionAppearance>):CSSProperties|undefined=>appearance?({'--status-fill':appearance.fill,'--status-color':appearance.color,'--status-pale':appearance.pale} as CSSProperties):undefined;
@@ -28,16 +29,17 @@ export default function App(){
   const [seasonFilter,setSeasonFilter]=useState<Season|'all'>('all'),[region,setRegion]=useState<Region|'all'>('all');
   const [search,setSearch]=useState(''),[selectedCounty,setSelectedCounty]=useState('110101');
   const [countyFocus,setCountyFocus]=useState<{id:string;revision:number}|null>(null);
-  const [spatialPoint,setSpatialPoint]=useState({lon:91.1,lat:29.7});
+  const [spatialPoint,setSpatialPoint]=useState<{lon:number;lat:number}|null>(null);
   const [layer,setLayer]=useState<'season'|'temperature'>('season'),[showTransitions,setShowTransitions]=useState(true);
-  const [showBoundaries,setShowBoundaries]=useState(false),[filterOpen,setFilterOpen]=useState(false),[methodOpen,setMethodOpen]=useState(false);
+  const [showBoundaries,setShowBoundaries]=useState(false),[showProvinceNames,setShowProvinceNames]=useState(false),[filterOpen,setFilterOpen]=useState(false),[methodOpen,setMethodOpen]=useState(false);
   const modalClose=useRef<HTMLButtonElement>(null),modalPanel=useRef<HTMLDivElement>(null);
+  const [toast,setToast]=useState(''),toastTimer=useRef<number|null>(null),mapPanel=useRef<HTMLElement>(null);
   const countyData=useCounties(date),spatialData=useSpatialWeather(date);
   const availableDates=spatialData.availableDates;
   const minDate=availableDates[0]??latestDate,maxDate=availableDates.at(-1)??latestDate;
   const overlayTransitions=layer==='season'&&showTransitions;
-  const spatialCell=useMemo(()=>spatialData.getCell(spatialPoint.lon,spatialPoint.lat),[spatialData.getCell,spatialPoint]);
-  const location=useMemo(()=>spatialData.locations?lookupGridLocation(spatialData.locations,spatialPoint.lon,spatialPoint.lat):null,[spatialData.locations,spatialPoint]);
+  const spatialCell=useMemo(()=>spatialPoint?spatialData.getCell(spatialPoint.lon,spatialPoint.lat):null,[spatialData.getCell,spatialPoint]);
+  const location=useMemo(()=>spatialPoint&&spatialData.locations?lookupGridLocation(spatialData.locations,spatialPoint.lon,spatialPoint.lat):null,[spatialData.locations,spatialPoint]);
   useEffect(()=>{
     if(availableDates.length&&!availableDates.includes(date))setDate([...availableDates].reverse().find(day=>day<=date)??availableDates[0]);
   },[availableDates,date]);
@@ -81,6 +83,25 @@ export default function App(){
   const refresh=()=>{void spatialData.refresh();void countyData.refresh();};
   const stepDate=(direction:number)=>{const index=availableDates.indexOf(date),next=availableDates[index+direction];if(next)setDate(next);};
   const updatedAt=spatialData.field?.metadata.weatherUpdatedAt;
+  const showToast=(message:string)=>{setToast(message);if(toastTimer.current)window.clearTimeout(toastTimer.current);toastTimer.current=window.setTimeout(()=>setToast(''),2400);};
+  useEffect(()=>()=>{if(toastTimer.current)window.clearTimeout(toastTimer.current);},[]);
+  // Always export the full-country base view; transient overlays are stripped in exportMapPng.
+  const runExport=async(mode:'download'|'share')=>{
+    const svg=mapPanel.current?.querySelector('svg.county-map-svg') as SVGSVGElement|null;
+    if(!svg){showToast('地图尚未就绪，请稍后重试');return;}
+    try{
+      const blob=await exportMapPng({svg,layer,date,transitions:transitionDirections,showTransitions});
+      const filename=`四时-${layer==='season'?'季节分布':'滑动均温'}-${date}.png`;
+      if(mode==='share'){
+        const file=new File([blob],filename,{type:'image/png'});
+        if(navigator.canShare?.({files:[file]})){await navigator.share({files:[file],title:'四时 · 中国季节地图'});return;}
+      }
+      downloadBlob(blob,filename);showToast('已保存图片');
+    }catch(error){
+      if((error as DOMException)?.name==='AbortError')return;
+      showToast('导出失败，请重试');
+    }
+  };
 
   return <div className="app-shell">
     <header className="header"><div className="header-inner">
@@ -101,17 +122,17 @@ export default function App(){
       <div className="workspace-toolbar"><div className="section-heading"><h2>{view==='map'?'全国季节分布':'换季观察'}</h2><span className="muted-line"/><span>{countyData.readings.length.toLocaleString()} 个县级单元 · {countyData.summaries.length} 个地级与直辖汇总</span>{seasonFilter!=='all'&&<button className="filter-chip" onClick={()=>setSeasonFilter('all')}>{SEASONS[seasonFilter].name}<X size={11}/></button>}</div><div className="toolbar-controls"><button className="date-step" disabled={date<=minDate} onClick={()=>stepDate(-1)} aria-label="前一天"><ChevronLeft size={16}/></button><label className="date-input"><CalendarDays size={14}/><input aria-label="查看日期" type="date" value={date} min={minDate} max={maxDate} onChange={event=>{if(availableDates.includes(event.target.value))setDate(event.target.value);}}/></label><button className="date-step" disabled={date>=maxDate} onClick={()=>stepDate(1)} aria-label="后一天"><ChevronRight size={16}/></button><span className="toolbar-divider"/><button className={'filter-button '+(filterOpen?'active':'')} onClick={()=>setFilterOpen(value=>!value)}><SlidersHorizontal size={14}/>筛选</button></div></div>
       {filterOpen&&<div className="filter-panel"><label>地理区域<select value={region} onChange={event=>setRegion(event.target.value as Region|'all')}><option value="all">全国所有区域</option>{REGIONS.map(value=><option key={value}>{value}</option>)}</select></label><label>季节<select value={seasonFilter} onChange={event=>setSeasonFilter(event.target.value as Season|'all')}><option value="all">全部季节</option>{SEASON_ORDER.map(value=><option value={value} key={value}>{SEASONS[value].name}</option>)}</select></label><button onClick={()=>{setRegion('all');setSeasonFilter('all');}}>重置筛选</button><span>地图、县区和地级汇总同步应用筛选。</span></div>}
       {view==='map'&&<div className="dashboard-grid">
-        <section className="map-card panel" id="season-map-panel">
-          <div className="map-toolbar dual-map-toolbar"><span className="map-view-label"><Grid3X3 size={14}/>地形季节图</span><div className="segmented"><button className={layer==='season'?'active':''} aria-pressed={layer==='season'} onClick={()=>setLayer('season')}>季节分布</button><button className={layer==='temperature'?'active':''} aria-pressed={layer==='temperature'} onClick={()=>setLayer('temperature')}>滑动均温</button></div><div className="map-search"><Search size={15}/><input placeholder="县区 / 城市 / 区划码" aria-label="搜索县区或城市" value={search} onChange={event=>setSearch(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&searchResults[0])selectCounty(searchResults[0].unit.id,true);if(event.key==='Escape')setSearch('');}}/>{search&&<button aria-label="清除搜索" onClick={()=>setSearch('')}><X size={13}/></button>}{search&&<div className="search-results">{searchResults.length?searchResults.map(reading=><button key={reading.unit.id} onClick={()=>selectCounty(reading.unit.id,true)}><MapPin size={13}/><b>{reading.unit.name}</b><span>{reading.unit.city} · {reading.unit.id}</span></button>):<p>未找到县区，试试所属市或六位区划码</p>}</div>}</div></div>
+        <section className="map-card panel" id="season-map-panel" ref={mapPanel}>
+          <div className="map-toolbar dual-map-toolbar"><span className="map-view-label"><Grid3X3 size={14}/>地形季节图</span><div className="segmented"><button className={layer==='season'?'active':''} aria-pressed={layer==='season'} onClick={()=>setLayer('season')}>季节分布</button><button className={layer==='temperature'?'active':''} aria-pressed={layer==='temperature'} onClick={()=>setLayer('temperature')}>滑动均温</button></div><div className="map-export"><button aria-label="下载当前地图图片" title="下载图片" onClick={()=>void runExport('download')}><Download size={15}/></button><button aria-label="分享当前地图图片" title="分享图片" onClick={()=>void runExport('share')}><Share2 size={15}/></button></div><div className="map-search"><Search size={15}/><input placeholder="县区 / 城市 / 区划码" aria-label="搜索县区或城市" value={search} onChange={event=>setSearch(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&searchResults[0])selectCounty(searchResults[0].unit.id,true);if(event.key==='Escape')setSearch('');}}/>{search&&<button aria-label="清除搜索" onClick={()=>setSearch('')}><X size={13}/></button>}{search&&<div className="search-results">{searchResults.length?searchResults.map(reading=><button key={reading.unit.id} onClick={()=>selectCounty(reading.unit.id,true)}><MapPin size={13}/><b>{reading.unit.name}</b><span>{reading.unit.city} · {reading.unit.id}</span></button>):<p>未找到县区，试试所属市或六位区划码</p>}</div>}</div></div>
           <div className="model-coverage"><span><i/>独立气温采样：{spatialData.readyCount.toLocaleString()} / {spatialData.totalCount.toLocaleString()} 点</span><span>地形温度场 · 分级等值面</span></div>
-          <div className="field-controls"><span className="field-style-label">{spatialData.field?.metadata.weatherGridStep??1}°气温采样 · {spatialData.field?.step??.1}°地形辅助</span><label className="field-points-toggle"><input type="checkbox" checked={showBoundaries} onChange={event=>setShowBoundaries(event.target.checked)}/>显示县界</label></div>
+          <div className="field-controls"><span className="field-style-label">{spatialData.field?.metadata.weatherGridStep??1}°气温采样 · {spatialData.field?.step??.1}°地形辅助</span><label className="field-points-toggle"><input type="checkbox" checked={showBoundaries} onChange={event=>setShowBoundaries(event.target.checked)}/>显示地级行政区边界</label><label className="field-points-toggle"><input type="checkbox" checked={showProvinceNames} onChange={event=>setShowProvinceNames(event.target.checked)}/>显示省名</label></div>
           <div className="field-source-note"><span>Open-Meteo + Terrarium DEM · {updatedAt?new Date(updatedAt).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}):'正在读取发布快照'}</span><button aria-label="刷新格点模型" disabled={spatialData.loading} onClick={()=>void spatialData.refresh()}><RefreshCw size={11} className={spatialData.loading?'spin':''}/></button></div>
           <div className="spatial-method-note"><Info size={13}/><span>细网格与平滑边界用于表达地形差异，实际精度取决于气温采样；点选读取原始格点判定。</span></div>
           {spatialData.error&&<div className="model-data-error" role="status">{spatialData.error}</div>}
-          <CountyMap readings={countyData.readings} boundaries={countyData.boundaries} selected={selectedCounty} focus={countyFocus} onSelect={selectCounty} filter={seasonFilter} region={region} layer={layer} showTransitions={overlayTransitions} showPoints={false} showBoundaries={showBoundaries} spatialMode spatialField={spatialData.field?.date===date?spatialData.field:null} spatialLayers={spatialData.field?.date===date?spatialData.layers:null} getSpatialLocation={spatialData.getLocation} onSpatialSelect={setSpatialPoint} spatialSelected={spatialPoint} spatialLoading={spatialData.loading}/>
+          <CountyMap readings={countyData.readings} boundaries={countyData.boundaries} prefectureBoundaries={countyData.prefectureBoundaries} selected={selectedCounty} focus={countyFocus} onSelect={selectCounty} filter={seasonFilter} region={region} layer={layer} showTransitions={overlayTransitions} showPoints={false} showBoundaries={showBoundaries} showProvinceNames={showProvinceNames} spatialMode spatialField={spatialData.field?.date===date?spatialData.field:null} spatialLayers={spatialData.field?.date===date?spatialData.layers:null} getSpatialLocation={spatialData.getLocation} onSpatialSelect={setSpatialPoint} spatialSelected={spatialPoint} spatialLoading={spatialData.loading}/>
           <div className="map-legend status-map-legend">{layer==='season'?SEASON_ORDER.map(season=><button key={season} onClick={()=>toggleSeason(season)} className={seasonFilter!==season&&seasonFilter!=='all'?'dim':''}><i style={{background:SEASONS[season].fill}}/>{SEASONS[season].name}</button>):<TemperatureLegend overlaid={false}/>}<span className="legend-divider"/><span className="missing-legend"><i/>资料不足</span></div>
           {layer==='season'&&<TransitionLegend directions={transitionDirections} enabled={showTransitions} onToggle={()=>setShowTransitions(value=>!value)}/>}
-          <div className="map-footnote"><Info size={12}/><span>省域裁切 · 县界仅作定位 · 南海附图仅示位置</span><span className="map-source">模型参考</span></div>
+          <div className="map-footnote"><Info size={12}/><span>省域裁切 · 地级边界仅作参考 · 南海附图仅示位置</span><span className="map-source">模型参考</span></div>
         </section>
         <aside className="side-column"><SpatialDetail cell={spatialCell} location={location} date={date} loading={spatialData.loading}/><section className="watch-card panel"><div className="watch-heading"><h3><Radio size={16}/>县级换季参考<span>{countyTransitions.length}</span></h3><button onClick={()=>changeView('watch')} aria-label="查看全部换季县区"><ArrowRight size={16}/></button></div><p className="watch-description">按县内代表点统计，与地形格点独立计算。</p><div className="watch-list">{countyTransitions.length?countyTransitions.slice(0,3).map(reading=><button className="watch-item" style={statusVars(countyTransitionAppearance(reading))} key={reading.unit.id} onClick={()=>selectCounty(reading.unit.id,true)}><div><span className="watch-city">{reading.unit.name}<small>{reading.unit.city}</small></span><span className="watch-target"><b className={reading.forecastTransition?'forecast-text':''}>{reading.forecastTransition?`预计完成换季 · ${SEASONS[reading.forecastTransition.target].verb} ${reading.forecastTransition.expectedDate.slice(5).replace('-','/')}`:`正在换季 · ${SEASONS[reading.state!.transition!.target].verb}`}</b></span></div><TransitionProgress state={reading.state!}/></button>):<div className="watch-empty"><Leaf size={25}/><span>{countyData.loading?'正在读取县级统计':'当前筛选暂无正在进行的换季过程'}</span></div>}</div><div className="watch-note"><Info size={12}/>先由完整日开启换季过程，再由 7 日预报判断能否完成。</div></section></aside>
       </div>}
@@ -120,6 +141,7 @@ export default function App(){
       <CountyTable readings={countyData.readings} summaries={countyData.summaries} date={date} region={region} season={seasonFilter} onlyTransitions={view==='watch'} onSelect={selectCounty}/>
       <footer className="footer"><div><span className="footer-brand">四时</span><span>让季节可见，让冷暖可知。</span></div><span><span className="status-dot"/>Open-Meteo 模型数据<i/>滑标参考判定<button aria-label="查看季节判定说明" onClick={()=>setMethodOpen(true)}><CircleHelp size={13}/></button></span><span className="footer-credit">MADE FOR THE CHANGING SEASONS</span></footer>
     </main>
+    {toast&&<div className="map-toast" role="status">{toast}</div>}
     {methodOpen&&<div className="modal-overlay" onClick={event=>{if(event.target===event.currentTarget)setMethodOpen(false);}}><div className="method-modal" role="dialog" aria-modal="true" aria-labelledby="method-title" ref={modalPanel}><button className="modal-close" ref={modalClose} aria-label="关闭划分标准" onClick={()=>setMethodOpen(false)}><X size={20}/></button><span className="modal-eyebrow"><BookOpen size={15}/> HOW SEASONS ARE DEFINED</span><h2 id="method-title">跟随气温，读懂四季。</h2><p className="modal-lead">参考 GB/T 42074—2022 的滑动平均阈值与连续性规则，提供季节估算和换季观察。</p><div className="method-thresholds">{SEASON_ORDER.map(season=><div key={season} style={{background:SEASONS[season].pale,color:SEASONS[season].color}}><SeasonIcon season={season}/><b>{SEASONS[season].name}</b><span>{season==='winter'?'< 10°C':season==='summer'?'≥ 22°C':'10°C ≤ T < 22°C'}</span></div>)}</div><ol className="method-steps"><li><b>发布前生成温度场与季节图</b><p>独立规则气温先归算参考高度，四邻双线性插值后按真实 DEM 高程订正，再逐格计算滑标。全国分类、县级统计和等值面均在构建时生成，页面直接加载对应日期的结果。</p></li><li><b>连续达标，观察季节的转变</b><p>当天及此前 4 天形成 5 日滑动均温；入春 ≥10°C、入夏 ≥22°C、入秋 &lt;22°C、入冬 &lt;10°C。连续达标 1–4 天为观察，第 5 天完成参考初判。缺测和日期断档会中断过程。</p></li><li><b>统一换季状态口径</b><p>“正在换季”表示完整日已经开启换季进程，但当前 7 日预报无法确认完成；“预计完成换季”表示完整日已经开启过程，且当前 7 日预报可以确定未来达到第 5 个滑标达标日。未来才开始的预报过程不进入换季色阶；最近一次发布的预报会保留至下一份完整快照成功发布。</p></li><li><b>平滑边界，保留离散颜色</b><p>温度使用连续场分级等值面，季节与换季使用各自分类掩膜的平滑轮廓；小于 8 个 0.1° 显示格的孤立类别碎斑不在地图上显示。不对季节编号做插值，也不做颜色归一化。显示边界是网格间的近似，点选读数保留原格点值。</p></li></ol><div className="method-caveat"><Info size={17}/><div><b>参考估算的边界</b><p>1°气温采样和 0.1°地形显示网格不等于 10 km 气温精度。固定 6.5°C/km 高差订正无法还原局地逆温、坡向等过程，未融合地面实况。尚未接入 1991–2020 常年日温、偏早二次判断和特殊气候区校正，短序列季节可能为初始估计，不能替代官方入季结论。县级统计按代表点计数，地级均温为有效代表点等权平均。历史县界可能不包含最新区划调整；台湾缺县界时只标省级归属。</p></div></div><div className="data-settings"><div><b>当前数据源</b><span>Open-Meteo + Terrarium DEM · {updatedAt??'等待发布快照'}</span></div><button onClick={()=>{refresh();setMethodOpen(false);}}>刷新发布快照<ArrowRight size={14}/></button></div><div className="method-links"><a href="https://openstd.samr.gov.cn/bzgk/std/newGbInfo?hcno=2CC96F656DE7E1641FEA09766A87FDD3" target="_blank" rel="noreferrer">国家标准全文<ExternalLink size={12}/></a><a href="https://open-meteo.com/en/docs" target="_blank" rel="noreferrer">Open-Meteo 数据说明<ExternalLink size={12}/></a><span>CC BY 4.0</span></div></div></div>}
   </div>;
 }
