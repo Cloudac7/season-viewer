@@ -174,6 +174,67 @@ test('small season islands are absorbed without leaving pinholes or an extra cat
   }
 });
 
+test('diagonal category junctions keep the surfaces filled without white pinholes', () => {
+  const rows = 20, cols = 20, size = rows * cols, base = fixture();
+  // Two stable autumn blocks that touch only at one corner. Truly ambiguous
+  // for marching squares: resolving the two masks independently leaves a lens
+  // between them that neither path fills, which renders as a white pinhole.
+  const seasons = new Int8Array(size).fill(1);
+  for (let row = 4; row <= 7; row++) for (let col = 4; col <= 7; col++) seasons[row * cols + col] = 2;
+  for (let row = 8; row <= 11; row++) for (let col = 8; col <= 11; col++) seasons[row * cols + col] = 2;
+  const field: SpatialFieldResult = {
+    ...base,
+    bounds: { west: 100, east: 101.9, south: 30, north: 31.9 }, step: 0.1, rows, cols, date: '2026-10-25',
+    seasons,
+    targets: new Int8Array(size).fill(-1),
+    average: Float32Array.from({ length: size }, (_, index) => 10 + (index % cols) * 0.5),
+    temperature: new Float32Array(size), status: new Uint8Array(size), expectedDays: new Int8Array(size), transitionDays: new Uint8Array(size), estimated: new Uint8Array(size),
+    metadata: { ...base.metadata, validCells: size, missingCells: 0 },
+  };
+  const original = seasons.slice(), surfaces = generateSpatialContours(field).layers.filter(layer => layer.kind === 'season');
+  // Display cleanup must never rewrite the sampled grid used by the readout.
+  assert.deepEqual(field.seasons, original);
+  const point = (x: number, y: number) => projection(wgsToGcj(field.bounds.west + (x - 0.5) * field.step, field.bounds.south + (y - 0.5) * field.step))!;
+  for (let y = 7.55; y <= 8.45; y += 0.1) {
+    for (let x = 7.55; x <= 8.45; x += 0.1) {
+      const containing = surfaces.filter(layer => contains(layer.path, point(x, y)));
+      assert.equal(containing.length, 1, `junction sample ${x.toFixed(2)},${y.toFixed(2)}`);
+    }
+  }
+  const autumn = surfaces.find(layer => layer.season === 'autumn')!;
+  assert.equal(contains(autumn.path, point(5.5, 5.5)), true);
+  assert.equal(contains(autumn.path, point(9.5, 9.5)), true);
+});
+
+test('generalized categorical boundaries still tile every interior point exactly once', () => {
+  const rows = 24, cols = 24, size = rows * cols, base = fixture();
+  // A curved two-category boundary exercises both diagonal crossings and arcs
+  // without the separate multi-category junction case.
+  const seasons = Int8Array.from({ length: size }, (_, index) => {
+    const row = Math.floor(index / cols) - 12, col = index % cols - 12;
+    return row * row + col * col < 49 ? 1 : 2;
+  });
+  const field: SpatialFieldResult = {
+    ...base,
+    bounds: { west: 100, east: 102.3, south: 30, north: 32.3 }, step: 0.1, rows, cols, date: '2026-10-25',
+    seasons,
+    targets: new Int8Array(size).fill(-1),
+    average: Float32Array.from({ length: size }, (_, index) => 6 + (index % cols) * 0.4),
+    temperature: new Float32Array(size), status: new Uint8Array(size), expectedDays: new Int8Array(size), transitionDays: new Uint8Array(size), estimated: new Uint8Array(size),
+    metadata: { ...base.metadata, validCells: size, missingCells: 0 },
+  };
+  const surfaces = generateSpatialContours(field).layers.filter(layer => layer.kind === 'season');
+  const point = (x: number, y: number) => projection(wgsToGcj(field.bounds.west + (x - 0.5) * field.step, field.bounds.south + (y - 0.5) * field.step))!;
+  // Boundary generalization must not open seams between neighbours or let two
+  // fills overlap, including around the curved rim.
+  for (let y = 3.2; y <= 20.8; y += 0.19) {
+    for (let x = 3.2; x <= 20.8; x += 0.19) {
+      const containing = surfaces.filter(layer => contains(layer.path, point(x, y)));
+      assert.equal(containing.length, 1, `sample ${x.toFixed(2)},${y.toFixed(2)}`);
+    }
+  }
+});
+
 test('small transition classes are absorbed into the surrounding transition color', () => {
   const field = categoricalFixture();
   for (let row = 1; row < 5; row++) {
