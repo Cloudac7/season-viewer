@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import {EMPTY_GRID_WEATHER,fetchGridBatch,gridBatchApiCost,gridBatchPastDays,gridHistoricalDays,validGridCatalog,validGridWeather} from './spatial-grid';
 import type {WeatherGrid,WeatherGridCatalog,WeatherGridNode} from './spatial-grid';
 import {addDays,beijingDate} from './season';
-import {OpenMeteoHttpError} from './open-meteo';
+import {OpenMeteoHttpError,OPEN_METEO_FORECAST_MODELS} from './open-meteo';
 
 const node:WeatherGridNode={id:'r0c0',row:0,col:0,lon:85,lat:32};
 const catalog:WeatherGridCatalog={version:1,id:'test-grid',crs:'WGS84',step:.5,origin:[85,32],rows:2,cols:2,nodes:[node],source:{name:'test',url:'https://open-meteo.com/en/docs',retrievedAt:new Date().toISOString(),boundarySha256:'test',note:'test'}};
@@ -36,6 +36,7 @@ test('grid bootstrap stores real elevation and separates incomplete and forecast
       assert.equal(params.get('past_days'),'14');
       assert.equal(params.get('forecast_days'),'7');
       assert.equal(params.get('cell_selection'),'land');
+      assert.equal(params.get('models'),OPEN_METEO_FORECAST_MODELS);
       assert.equal(params.has('elevation'),false);
       return new Response(JSON.stringify(apiResult()),{status:200});
     };

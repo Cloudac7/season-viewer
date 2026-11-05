@@ -7,7 +7,7 @@ import type {Topology,GeometryCollection} from 'topojson-specification';
 import {classifyCounty,countyForecastIsFresh,countyHistoricalDays,EMPTY_COUNTY_WEATHER,mergeCountyWeather,summarizePrefectures,validCountyWeather} from './counties';
 import type {CountyCatalog,CountyBoundaries,CountySeries,CountyWeather} from './counties';
 import {countyBatchApiCost,countyBatchPastDays,fetchCountyBatch} from './county-weather';
-import {OpenMeteoHttpError} from './open-meteo';
+import {OpenMeteoHttpError,OPEN_METEO_FORECAST_MODELS} from './open-meteo';
 import {gcjToWgs,wgsToGcj} from './coordinates';
 import {sampleColor} from './field';
 import {addDays,beijingDate} from './season';
@@ -106,7 +106,7 @@ test('initial model fetch batches representative coordinates with an explicit Be
   t.mock.method(globalThis,'fetch',async(url:string,init:RequestInit)=>{assert.equal(url,'https://api.open-meteo.com/v1/forecast');assert.equal(init.method,'POST');requested=String(init.body);return new Response(JSON.stringify({latitude:unit.lat,longitude:unit.lon,daily:{time:Array.from({length:21},(_,i)=>addDays(today,i-14)),temperature_2m_mean:Array(21).fill(15)}}));});
   const result=await fetchCountyBatch([unit],EMPTY_COUNTY_WEATHER,new AbortController().signal);
   const params=new URLSearchParams(requested);
-  assert.equal(params.get('latitude'),String(unit.lat));assert.equal(params.get('longitude'),String(unit.lon));assert.equal(params.get('timezone'),'Asia/Shanghai');assert.equal(params.get('past_days'),'14');assert.equal(params.get('forecast_days'),'7');
+  assert.equal(params.get('latitude'),String(unit.lat));assert.equal(params.get('longitude'),String(unit.lon));assert.equal(params.get('timezone'),'Asia/Shanghai');assert.equal(params.get('past_days'),'14');assert.equal(params.get('forecast_days'),'7');assert.equal(params.get('models'),OPEN_METEO_FORECAST_MODELS);
   assert.equal(countyBatchPastDays([unit],EMPTY_COUNTY_WEATHER,today),14);assert.equal(countyBatchApiCost([unit],EMPTY_COUNTY_WEATHER,today),1.5);
   assert.equal(classifyCounty(unit,result.records[unit.id],addDays(today,-1)).status,'ready');
   assert.equal(result.records[unit.id].days.at(-1)?.date,addDays(today,-1));

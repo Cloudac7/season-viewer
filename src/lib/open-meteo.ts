@@ -1,3 +1,16 @@
+/**
+ * Explicit forecast model for production requests. `best_match` silently picks
+ * whichever model covers a point, so pinning a high-skill global model makes
+ * the source auditable and the bias correction consistent. ECMWF IFS 0.25°
+ * (≈9 km) is the highest-skill free global model over mainland China.
+ * Override with OPEN_METEO_MODELS for experiments; an empty value falls back.
+ */
+function readModelOverride():string {
+  if (typeof process === 'undefined' || !process.env) return '';
+  return process.env.OPEN_METEO_MODELS?.trim() ?? '';
+}
+export const OPEN_METEO_FORECAST_MODELS = readModelOverride() || 'ecmwf_ifs025';
+
 /** Keep transport status and retry guidance available to scheduled updaters. */
 export class OpenMeteoHttpError extends Error {
   readonly status:number;

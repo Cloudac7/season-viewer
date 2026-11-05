@@ -111,12 +111,12 @@ export async function exportMapPng(options: MapExportOptions): Promise<Blob> {
   if (transform) transform.removeAttribute('transform');
   const mapGroup = el('g', { transform: `translate(0 ${HEADER})` });
   mapGroup.appendChild(text(46, 22, 'TERRAIN SEASONS', { size: 9, fill: '#c1cbb8', weight: 500, spacing: 2 }));
-  mapGroup.appendChild(text(46, 33, 'OPEN-METEO · DAILY MODEL', { size: 5, fill: '#b7c1ad', spacing: 1 }));
+  mapGroup.appendChild(text(46, 33, 'OPEN-METEO · ECMWF DAILY MODEL', { size: 5, fill: '#b7c1ad', spacing: 1 }));
   while (clone.firstChild) mapGroup.appendChild(clone.firstChild);
   out.appendChild(mapGroup);
 
   appendLegend(out, HEADER + MAP_H + GAP, options);
-  out.appendChild(text(28, total - 8, 'Open-Meteo + Terrarium DEM · 四时 SEASON ATLAS · 模型估算，非地面实测', { size: 8, fill: '#9aa79e' }));
+  out.appendChild(text(28, total - 8, 'Open-Meteo · ECMWF + Terrarium DEM · 四时 SEASON ATLAS · 模型估算，非地面实测', { size: 8, fill: '#9aa79e' }));
 
   const xml = new XMLSerializer().serializeToString(out);
   const url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(xml);

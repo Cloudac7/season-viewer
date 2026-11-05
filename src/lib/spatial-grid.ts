@@ -2,7 +2,7 @@ import type { DayTemperature } from '../types';
 import type { TemperatureForecast } from './forecast';
 import { forecastIsFresh } from './forecast';
 import { addDays, beijingDate } from './season';
-import {fetchOpenMeteo} from './open-meteo';
+import {fetchOpenMeteo, OPEN_METEO_FORECAST_MODELS} from './open-meteo';
 
 /** Coordinates and sample spacing are WGS84, independent of county representatives. */
 export interface WeatherGridNode { id:string; row:number; col:number; lon:number; lat:number }
@@ -74,7 +74,7 @@ export function gridBatchApiCost(nodes:WeatherGridNode[],previous:WeatherGrid,to
 export async function fetchGridBatch(nodes:WeatherGridNode[],previous:WeatherGrid,signal:AbortSignal):Promise<WeatherGrid> {
   if(!nodes.length)return previous;
   const requestToday=beijingDate();
-  const params=new URLSearchParams({latitude:nodes.map(node=>node.lat).join(','),longitude:nodes.map(node=>node.lon).join(','),daily:'temperature_2m_mean',timezone:'Asia/Shanghai',past_days:String(gridBatchPastDays(nodes,previous,requestToday)),forecast_days:'7',cell_selection:'land'});
+  const params=new URLSearchParams({latitude:nodes.map(node=>node.lat).join(','),longitude:nodes.map(node=>node.lon).join(','),daily:'temperature_2m_mean',timezone:'Asia/Shanghai',past_days:String(gridBatchPastDays(nodes,previous,requestToday)),forecast_days:'7',cell_selection:'land',models:OPEN_METEO_FORECAST_MODELS});
   // Omit elevation: Open-Meteo uses the requested point's 90 m DEM elevation
   // for its existing statistical downscaling; do not apply a second lapse rate.
   const response=await fetchOpenMeteo(params,signal,'grid ');

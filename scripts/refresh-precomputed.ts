@@ -9,6 +9,14 @@ for(const script of ['scripts/update-counties.ts','scripts/update-weather-grid.t
   try{if(await run(script)!==0){failed=true;break;}}
   catch(error){console.error(error);failed=true;break;}
 }
+// Real observation-constrained history (ERA5-Land) is best-effort: a failure
+// must not block the weather refresh or deployment. Without a fresh field,
+// precompute reuses the cached history-era5.json or falls back to model past_days.
+if(!failed){
+  try{
+    if(await run('scripts/fetch-era5-history.ts')!==0)console.warn('ERA5-Land history refresh failed; reusing existing history-era5.json or model past_days');
+  }catch(error){console.warn('ERA5-Land history refresh error; continuing with existing/model history');console.warn(error);}
+}
 // Local development can still bake the previous snapshot after an upstream
 // failure. CI never deploys a failed refresh, so do not spend time baking it.
 if(!failed||!process.env.CI){

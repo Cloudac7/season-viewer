@@ -15,3 +15,7 @@ public/data/*.tmp.json
 
 # Immutable map publications are recreated by prebuild/predev from tracked sources.
 public/data/precomputed/
+
+# Generated reanalysis/bias products (created by data:history:era5 / data:bias:build)
+public/data/history-era5.json
+public/data/bias-field.json

@@ -2,7 +2,7 @@ import type { CountyUnit, CountyWeather, CountySeries } from './counties';
 import { countyHistoricalDays } from './counties';
 import type {DayTemperature} from '../types';
 import { addDays, beijingDate } from './season';
-import {fetchOpenMeteo} from './open-meteo';
+import {fetchOpenMeteo, OPEN_METEO_FORECAST_MODELS} from './open-meteo';
 
 interface ApiLocation {latitude:number;longitude:number;daily?:{time:string[];temperature_2m_mean:(number|null)[]}}
 /** A stale or absent point needs fourteen days to recover the history window. */
@@ -18,7 +18,7 @@ export function countyBatchApiCost(units:CountyUnit[],previous:CountyWeather,tod
 }
 export async function fetchCountyBatch(units:CountyUnit[],previous:CountyWeather,signal:AbortSignal):Promise<CountyWeather>{
   if(!units.length)return previous;
-  const params=new URLSearchParams({latitude:units.map(unit=>unit.lat).join(','),longitude:units.map(unit=>unit.lon).join(','),daily:'temperature_2m_mean',timezone:'Asia/Shanghai',past_days:String(countyBatchPastDays(units,previous)),forecast_days:'7'});
+  const params=new URLSearchParams({latitude:units.map(unit=>unit.lat).join(','),longitude:units.map(unit=>unit.lon).join(','),daily:'temperature_2m_mean',timezone:'Asia/Shanghai',past_days:String(countyBatchPastDays(units,previous)),forecast_days:'7',models:OPEN_METEO_FORECAST_MODELS});
   const response=await fetchOpenMeteo(params,signal);
   const body=await response.json();if(body.error)throw new Error(body.reason??'县级模型响应无效');
   const locations:ApiLocation[]=Array.isArray(body)?body:[body];

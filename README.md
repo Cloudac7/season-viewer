@@ -22,6 +22,10 @@ npm run data:counties:update   # 只更新县级代表点快照
 npm run data:grid:import       # 重新生成独立天气采样目录
 npm run data:seed              # 从当前线上快照补齐县级和格点天气
 npm run data:terrain:import    # 导入公开 Terrarium DEM（需联网，原始瓦片缓存）
+npm run data:history:era5      # 拉取 ERA5-Land 0.1° 历史日温，供预计算替换模式 past_days（需联网）
+npm run data:stations:import   # 导入 NOAA GHCN-Daily / Meteostat 站点观测（需联网）
+npm run data:bias:build        # 由站点观测与模式对比生成偏差场 public/data/bias-field.json
+npm run data:bias:evaluate     # 留出站点评估偏差订正前后的 RMSE / 偏差 / MAE
 ```
 
 `data:refresh` 遇上游失败会停止后续下载，仍尝试用已有资料生成可用快照，错误以退出码报告。429 不循环重试或绕过配额。正式静态部署需由部署环境每日运行 `data:refresh` 再执行 `build`、发布 `dist/`；浏览器不会直接向 Open-Meteo 发起全国 API 请求。静态托管本身不会获取新天气，页面保留真实资料时间。
@@ -68,6 +72,15 @@ npx wrangler secret put GITHUB_DISPATCH_TOKEN
 - 对每个细格独立判季与推算预报。缺少任一四邻天气节点或连续完整日的区域保持缺测，不跨数据洞填补。南海附图只示位置。
 
 1°是气温采样间距，0.1°是地形辅助显示间距，**不等于 10 km 气温观测/预报精度**。固定 6.5°C/km 递减率不能表达局地逆温、坡向或冷空气堆积，仍属于原型级地形辅助模型估算。
+
+## 数据源、历史真实化与站点偏差订正
+
+- **预报模型**：请求显式使用 `models=ecmwf_ifs025`（ECMWF IFS 0.25°≈9 km），可用环境变量 `OPEN_METEO_MODELS` 覆盖；`best_match` 保留为降级路径。
+- **历史真实化（默认口径）**：历史日温改用 `archive-api` 的 `models=era5_land`（ERA5-Land 0.1°≈9 km 再分析，同化观测、对同一过去日稳定、不随预报修订），最近约 5–6 天因再分析滞后回退到实时模式 `past_days`。由 `npm run data:history:era5` 生成 `public/data/history-era5.json`，预计算在**工作副本**上按日期覆盖，原始快照不变；`manifest.json` 的 `history` 记录是否施加、最新真实日期与滞后天数。实测该批 34 站上 ERA5-Land 与 `past_days` 精度基本持平（RMSE 1.92 vs 1.86），选它以「真实、稳定、可复现」为准。该步骤已并入 `data:refresh`（best-effort：失败不阻断发布，回退到缓存历史或模式 `past_days`），历史产物纳入 Actions 缓存。
+- **站点偏差订正（可选）**：用免费站点观测（[NOAA GHCN-Daily](https://www.ncei.noaa.gov/products/land-based-station/global-historical-climatology-network-daily)，必要时 [Meteostat](https://meteostat.net/)）与模式同日期日温对比，按站点、按月份估计“观测 − 模式”残差，再用反距离权重（IDW）插值成偏差场 `public/data/bias-field.json`。字段含来源、校准时间窗、站点数与半径，供审计。
+- **施加时机**：`scripts/precompute-spatial.ts` 在工作副本上先做历史真实化（按日期覆盖为 ERA5-Land），再对未覆盖的最近模式日与预报施加偏差订正；**原始快照 `county-weather.json` 与 `weather-grid-weather.json` 保持原样**，重复预计算幂等，替换/删除产物只产生新修订（revision）。`manifest.json` 的 `history` / `bias` 字段记录是否施加及来源。
+- **典型流程**：`npm run data:history:era5` → `npm run data:stations:import` → `npm run data:bias:build` → `npm run data:bias:evaluate`（留出站点验证收益）→ `npm run build`。历史真实化与偏差订正都默认关闭：没有对应产物时行为与纯模式完全一致。
+- **精度口径**：即使历史换为再分析并加入站点订正，结果仍是“观测约束的再分析 + 模式估算（含订正）”，不是逐点地面实测；固定递减率、再分析滞后与西部站点稀疏仍限制精度。更准的 CLDAS-V2.0 / CMFD / CMA 站点数据需注册或商业授权，未纳入免费链路。
 
 ## 平滑与颜色
 

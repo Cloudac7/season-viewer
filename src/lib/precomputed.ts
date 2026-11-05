@@ -19,6 +19,10 @@ export interface PrecomputedManifest {
   locations:string; details:string; elevation:string;
   weather:{step:number;totalCount:number;updatedAt:string|null};
   counties:{totalCount:number;updatedAt:string|null};
+  /** Optional provenance for the station-derived bias correction applied at precompute time. */
+  bias?:{applied:boolean;source?:string;stations?:number;radiusKm?:number};
+  /** Optional provenance for the ERA5-Land reanalysis history applied at precompute time. */
+  history?:{applied:boolean;source?:string;model?:string;latest?:string|null;lagDays?:number};
   display:{bounds:TerrainGrid['bounds'];rows:number;cols:number;step:number};
 }
 export type SpatialFieldMeta=Pick<SpatialFieldResult,'bounds'|'step'|'rows'|'cols'|'date'|'metadata'>;

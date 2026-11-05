@@ -37,6 +37,7 @@ jobs:
           path: |
             public/data/county-weather.json
             public/data/weather-grid-weather.json
+            public/data/history-era5.json
           key: weather-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: weather-v1-
       - name: Discard cross-run quota state
@@ -62,6 +63,7 @@ jobs:
           path: |
             public/data/county-weather.json
             public/data/weather-grid-weather.json
+            public/data/history-era5.json
           key: weather-v1-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Stop after a failed refresh
         if: steps.refresh.outcome != 'success'
